@@ -594,6 +594,13 @@ function loginErr(msg){
   if(!msg){ e.classList.add('hidden'); return; }
   e.textContent=msg; e.classList.remove('hidden');
 }
+/* Akkaunt emailiga qarab ROL beriladi — admin menejer bo'la OLMAYDI */
+function roleOfEmail(email){
+  const e=(email||'').toLowerCase();
+  if(e.startsWith('manager@')||e.startsWith('menejer@')) return 'manager';
+  if(e.startsWith('owner@')||e.startsWith('egasi@')) return 'owner';
+  return 'admin';   // qolgan hamma — faqat administrator
+}
 async function loginNext(){
   const email=(document.getElementById('lg').value||'').trim();
   const pass=document.getElementById('pw').value||'';
@@ -610,16 +617,26 @@ async function loginNext(){
       return;
     }
     pendingUser=data.user;
+    // ⚠️ ROL — akkaunt emailidan olinadi, tanlangan tugmadan EMAS
+    const realRole=roleOfEmail(data.user.email);
     btn.disabled=false; btn.textContent='Kirish';
-    // Menejer — qo'shimcha MFA
-    if(selRole==='manager'){
+    // Admin "Menejer" tugmasini bosgan bo'lsa — RAD ETILADI
+    if(selRole!==realRole){
+      await SB.auth.signOut();
+      pendingUser=null;
+      loginErr(realRole==='admin'
+        ? "Bu akkaunt — Administrator. Menejer huquqi yo'q. \"Administrator\" tugmasini tanlang."
+        : "Bu akkaunt — Menejer. \"Menejer\" tugmasini tanlang.");
+      return;
+    }
+    if(realRole==='manager'){
       startMFA();
       const warn=document.getElementById('mfaWarn');
       if(warn) warn.innerHTML='✓ <b>Menejer</b> akkaunti tasdiqlandi. Endi kodni kiriting.';
       document.getElementById('loginStep1').classList.add('hidden');
       document.getElementById('loginStep2').classList.remove('hidden');
     } else {
-      await afterLogin('admin');
+      await afterLogin(realRole);
     }
   }catch(e){
     btn.disabled=false; btn.textContent='Kirish';
@@ -651,10 +668,19 @@ function startMFA(){
 }
 async function mfaVerify(){
   const v=document.getElementById('mfaIn').value.trim();
+  // ⚠️ Qayta tekshirish: faqat HAQIQIY menejer akkaunti o'ta oladi
+  if(!pendingUser || roleOfEmail(pendingUser.email)!=='manager'){
+    toast("Bu akkaunt menejer emas. Kirish rad etildi.",false);
+    try{ if(SB) await SB.auth.signOut(); }catch(e){}
+    pendingUser=null; clearInterval(mfaTimer); backToStep1();
+    return;
+  }
   if(v===mfaCur){ clearInterval(mfaTimer); await afterLogin('manager'); }
   else toast('Kod noto\'g\'ri yoki eskirgan. Ekrandagi kodni kiriting.',false);
 }
 function enterApp(r){
+  // ⚠️ Xavfsizlik: rol har doim akkaunt emailidan olinadi
+  if(pendingUser) r=roleOfEmail(pendingUser.email);
   role=r; document.getElementById('login').classList.add('hidden'); document.getElementById('app').classList.remove('hidden');
   document.getElementById('uav').textContent=r==='admin'?'A':r==='owner'?'E':'M';
   document.getElementById('uname').textContent=r==='admin'?'Administrator':r==='owner'?'Owner (egasi)':'Menejer';
