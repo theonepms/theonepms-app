@@ -140,6 +140,21 @@ h1,h2,h3,h4{font-family:'Space Grotesk',Inter,sans-serif;font-weight:600;letter-
 .gantt-wrap::-webkit-scrollbar-thumb:hover{background:var(--txt-3)}
 .gantt-wrap::-webkit-scrollbar-track{background:var(--panel-2)}
 .gantt2{min-width:900px}
+/* ===== Shaxmatka surish paneli (Shelter uslubida) ===== */
+.g-scrub{display:flex;align-items:center;gap:10px;margin-top:12px;padding:12px 16px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);flex-wrap:wrap}
+.gs-btn{width:34px;height:34px;border:1.5px solid var(--line);background:var(--panel);border-radius:9px;cursor:pointer;font-size:15px;font-weight:700;color:var(--txt-2);display:flex;align-items:center;justify-content:center;transition:.14s;flex-shrink:0}
+.gs-btn:hover{background:var(--brand);color:#fff;border-color:var(--brand);transform:translateY(-1px)}
+.gs-range{flex:1;min-width:220px;display:flex;flex-direction:column;gap:3px}
+.gs-range input[type=range]{width:100%;height:8px;-webkit-appearance:none;appearance:none;background:linear-gradient(90deg,var(--line-2) 0%,var(--brand) 25%,var(--line-2) 25%);border-radius:20px;outline:none;cursor:grab}
+.gs-range input[type=range]:active{cursor:grabbing}
+.gs-range input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:22px;border-radius:50%;background:var(--brand);border:3px solid #fff;box-shadow:0 2px 8px rgba(37,99,235,.45);cursor:grab}
+.gs-range input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.12)}
+.gs-range input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:var(--brand);border:3px solid #fff;box-shadow:0 2px 8px rgba(37,99,235,.45);cursor:grab}
+.gs-marks{display:flex;justify-content:space-between;font-size:10px;color:var(--txt-3);font-weight:600;padding:0 2px}
+.gs-today{padding:8px 14px;border:1.5px solid var(--brand);background:var(--brand);color:#fff;border-radius:9px;cursor:pointer;font-size:12.5px;font-weight:700;font-family:inherit;white-space:nowrap;transition:.14s;flex-shrink:0}
+.gs-today:hover{background:var(--brand-ink);transform:translateY(-1px)}
+.gs-info{font-size:12px;font-weight:700;color:var(--txt-2);font-family:'JetBrains Mono';background:var(--panel-2);padding:7px 12px;border-radius:8px;border:1px solid var(--line);white-space:nowrap;flex-shrink:0}
+@media(max-width:760px){.gs-range{order:9;flex-basis:100%}}
 .g-row{display:flex;border-bottom:1px solid var(--line)}
 .g-row.g-head{position:sticky;top:0;z-index:20;background:var(--panel-2)}
 .g-label{width:120px;flex-shrink:0;border-right:1px solid var(--line);padding:6px 12px;display:flex;flex-direction:column;justify-content:center;background:var(--panel-2);font-size:12px;position:sticky;left:0;z-index:10}
@@ -1085,7 +1100,38 @@ function renderGantt(){
       <div class="g-row g-head"><div class="g-label">${t('xona')}</div><div class="g-track" style="grid-template-columns:repeat(${ND},1fr)">${headCols}</div></div>
       ${rowsHtml}
     </div>
+  </div>
+
+  <div class="g-scrub">
+    <button class="gs-btn" onclick="shiftDate(-7)" title="1 hafta orqaga">«</button>
+    <button class="gs-btn" onclick="shiftDate(-1)" title="1 kun orqaga">‹</button>
+    <div class="gs-range">
+      <input type="range" id="ganttSlider" min="-60" max="180" step="1" value="${Math.round((ganttStart.getTime()+2*DAY-base.getTime())/DAY)}"
+        oninput="ganttSlide(this.value)" title="Sanalarni surish">
+      <div class="gs-marks">
+        <span>2 oy oldin</span>
+        <span style="font-weight:700;color:var(--brand-ink)">BUGUN</span>
+        <span>6 oy keyin</span>
+      </div>
+    </div>
+    <button class="gs-btn" onclick="shiftDate(1)" title="1 kun oldinga">›</button>
+    <button class="gs-btn" onclick="shiftDate(7)" title="1 hafta oldinga">»</button>
+    <button class="gs-today" onclick="ganttToday()">📍 Bugunga qaytish</button>
+    <span class="gs-info">${fmtShort(days[0])} — ${fmtShort(days[ND-1])}</span>
   </div>`;
+}
+/* Shaxmatkani surish (Shelter uslubida) */
+function ganttSlide(v){
+  const off=+v;                                  // bugundan necha kun surildi
+  ganttStart=new Date(base.getTime()+off*DAY-2*DAY);
+  const cd=document.getElementById('curDate'); if(cd)cd.textContent=fmt(new Date(ganttStart.getTime()+2*DAY));
+  render();
+  const sl=document.getElementById('ganttSlider'); if(sl) sl.focus();
+}
+function ganttToday(){
+  ganttStart=new Date(base.getTime()-2*DAY);
+  const cd=document.getElementById('curDate'); if(cd)cd.textContent=fmt(base);
+  render();
 }
 function stripTime(d){const x=new Date(d);x.setHours(0,0,0,0);return x;}
 let groupSel=new Set(), groupDate=null;
@@ -2300,7 +2346,22 @@ function renderNazorat(){
 }
 
 /* ================= E-MEHMON TAQQOSLASH — EXCEL FAYLDAN AVTOMAT ================= */
-let emResult=null, emArchive={}, emFileName='', emPeriod='';
+let emResult=null, emArchive={}, emFileName='', emPeriod='', emRawSaved=null;
+let emFrom='', emTo='';   // menejer tanlaydigan davr (KELISH sanasi bo'yicha)
+function setEmFrom(v){ emFrom=v; if(emRawSaved) emCompare(emRawSaved); else render(); }
+function setEmTo(v){ emTo=v; if(emRawSaved) emCompare(emRawSaved); else render(); }
+function setEmRange(days){
+  const to=new Date(base);
+  const from=new Date(base.getTime()-(days-1)*DAY);
+  emFrom=ymd(from); emTo=ymd(to);
+  if(emRawSaved) emCompare(emRawSaved); else render();
+}
+function setEmMonth(){
+  const y=base.getFullYear(), mo=base.getMonth();
+  emFrom=ymd(new Date(y,mo,1)); emTo=ymd(new Date(y,mo+1,0));
+  if(emRawSaved) emCompare(emRawSaved); else render();
+}
+function emClearRange(){ emFrom=''; emTo=''; if(emRawSaved) emCompare(emRawSaved); else render(); }
 
 function setEmTol(v){ emehmonTolerance=Math.max(0,+v||0); if(emResult&&emResult.raw) emCompare(emResult.raw); else render(); }
 function toMin(hhmm){ const m=(hhmm||'').match(/(\d{1,2}):(\d{2})/); return m?(+m[1]*60+ +m[2]):null; }
@@ -2394,16 +2455,37 @@ function emUpload(input){
 }
 
 /* --- ASOSIY TAQQOSLASH --- */
-function emCompare(raw){
-  // 1) Faylning DAVRINI aniqlaymiz (cheklov yo'q — fayl qanday bo'lsa shunday)
-  const allD=raw.map(r=>r.inD).filter(Boolean).sort();
-  const d1=allD[0]||'', d2=raw.map(r=>r.outD).filter(Boolean).sort().slice(-1)[0]||allD.slice(-1)[0]||'';
-  emPeriod=(d1&&d2)?(d1.split('-').reverse().join('.')+' — '+d2.split('-').reverse().join('.')):'';
+function emCompare(rawAll){
+  emRawSaved=rawAll;   // filtr o'zgarganda qayta solishtirish uchun saqlaymiz
 
-  // 2) PMS: shu davrda kirgan mehmonlar (har bir KISHI alohida: asosiy + sheriklar)
-  const from=d1?new Date(+d1.split('-')[0],+d1.split('-')[1]-1,+d1.split('-')[2]):new Date(0);
-  const to=d2?new Date(+d2.split('-')[0],+d2.split('-')[1]-1,+d2.split('-')[2]):new Date(9e15);
+  /* ===== 1) MENEJER TANLAGAN DAVR — faqat KELISH sanasi bo'yicha filtr ===== */
+  let raw=rawAll;
+  if(emFrom || emTo){
+    raw=rawAll.filter(r=>{
+      if(!r.inD) return false;
+      if(emFrom && r.inD < emFrom) return false;
+      if(emTo   && r.inD > emTo)   return false;
+      return true;
+    });
+  }
+
+  // Davr yozuvi (sarlavha uchun)
+  if(emFrom||emTo){
+    emPeriod=(emFrom?emFrom.split('-').reverse().join('.'):'boshidan')+' — '+(emTo?emTo.split('-').reverse().join('.'):'oxirigacha')+' (kelish sanasi)';
+  } else {
+    const allD=raw.map(r=>r.inD).filter(Boolean).sort();
+    const d1=allD[0]||'', d2=allD.slice(-1)[0]||'';
+    emPeriod=(d1&&d2)?(d1.split('-').reverse().join('.')+' — '+d2.split('-').reverse().join('.')+' (butun fayl)'):'';
+  }
+
+  /* ===== 2) PMS: SHU DAVRDA KELGAN mehmonlar (asosiy + sheriklar) ===== */
+  let from, to;
+  if(emFrom){ const p=emFrom.split('-'); from=new Date(+p[0],+p[1]-1,+p[2]); }
+  else { const allD=raw.map(r=>r.inD).filter(Boolean).sort(); const d=allD[0]; from=d?new Date(+d.split('-')[0],+d.split('-')[1]-1,+d.split('-')[2]):new Date(0); }
+  if(emTo){ const p=emTo.split('-'); to=new Date(+p[0],+p[1]-1,+p[2]); }
+  else { const allD=raw.map(r=>r.inD).filter(Boolean).sort(); const d=allD.slice(-1)[0]; to=d?new Date(+d.split('-')[0],+d.split('-')[1]-1,+d.split('-')[2]):new Date(9e15); }
   to.setHours(23,59,59,999);
+
   const pmsPeople=[];
   stays.filter(s=>(s.status==='in'||s.status==='out') && stripTime(s.inDate)>=stripTime(from) && stripTime(s.inDate)<=to)
     .forEach(s=>{
@@ -2480,7 +2562,7 @@ function emCompare(raw){
   });
 
   rows.sort((a,b)=>(a.flag==='ok'?1:0)-(b.flag==='ok'?1:0) || a.room.localeCompare(b.room));
-  emResult={rows,roomRows,raw,total:raw.length,pmsTotal:pmsPeople.length};
+  emResult={rows,roomRows,raw,total:raw.length,pmsTotal:pmsPeople.length,fileTotal:rawAll.length,filtered:(emFrom||emTo)?true:false};
   emArchive[ymd(base)+'_'+(emFileName||'fayl')]={period:emPeriod,rows,roomRows,when:uzTime()+' · '+fmt(base)};
   render();
 }
@@ -2538,7 +2620,26 @@ function renderEmehmon(){
   }
 
   return `<div class="hint" style="background:#eff4ff;color:var(--brand-ink)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M5 8l-3 4 3 4M19 8l3 4-3 4"/></svg>
-    <span>E-mehmon (UZBEKTURIZM) dan <b>Excel faylni yuklab</b> shu yerga tashlang — dastur PMS bilan <b>o'zi solishtiradi</b>. Ism, kelish/ketish sanasi va vaqti, xonadagi kishi soni tekshiriladi. Istagan davr uchun — cheklov yo'q.</span></div>
+    <span>E-mehmon (UZBEKTURIZM) dan <b>Excel faylni yuklang</b> — dastur PMS bilan <b>o'zi solishtiradi</b>. Ism, kelish/ketish sanasi va vaqti, xonadagi kishi soni tekshiriladi.</span></div>
+
+  <div class="panel" style="margin-bottom:14px"><div class="panel-h"><h3>📅 Qaysi davrni tekshirasiz?</h3><span class="spacer"></span>
+    <span style="font-size:11.5px;color:var(--txt-3)">Mehmonning <b>KELISH</b> sanasi bo'yicha</span></div>
+    <div style="padding:14px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-weight:600;font-size:13px">dan:</span>
+      <input type="date" value="${emFrom}" onchange="setEmFrom(this.value)" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px">
+      <span style="font-weight:600;font-size:13px">gacha:</span>
+      <input type="date" value="${emTo}" onchange="setEmTo(this.value)" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px">
+      <div class="seg" style="margin-left:6px">
+        <button onclick="setEmRange(1)">Bugun</button>
+        <button onclick="setEmRange(7)">7 kun</button>
+        <button onclick="setEmRange(30)">30 kun</button>
+        <button onclick="setEmMonth()">Bu oy</button>
+      </div>
+      ${(emFrom||emTo)?`<button class="btn btn-ghost" style="padding:7px 12px;font-size:12px;margin-left:auto" onclick="emClearRange()">✕ Davrni olib tashlash</button>`
+        :`<span style="margin-left:auto;font-size:11.5px;color:var(--txt-3)">Bo'sh qoldirsangiz — <b>butun fayl</b> solishtiriladi</span>`}
+    </div>
+    ${(emFrom||emTo)?`<div class="mini-hint" style="padding:0 20px 12px">Faqat <b>${emFrom?emFrom.split('-').reverse().join('.'):'boshidan'}</b> — <b>${emTo?emTo.split('-').reverse().join('.'):'oxirigacha'}</b> oralig'ida <b>KELGAN</b> mehmonlar solishtiriladi. Fayldagi boshqa sanalar e'tiborsiz qoldiriladi.</div>`:''}
+  </div>
 
   <div class="panel" style="margin-bottom:14px"><div class="panel-h"><h3>📤 E-mehmon Excel faylini yuklang</h3><span class="spacer"></span>
     <span style="font-size:12px;color:var(--txt-2)">Ruxsat etilgan vaqt farqi (daqiqa):</span> ${tolInput}</div>
@@ -2550,7 +2651,8 @@ function renderEmehmon(){
         <div style="font-size:12px;color:var(--txt-3)">E-mehmon → "Chiqib ketgan mehmonlar" → Excelga eksport (.xlsx)</div>
         <input type="file" accept=".xlsx,.xls" onchange="emUpload(this)" style="display:none">
       </label>
-      ${emFileName?`<div style="margin-top:12px;display:flex;align-items:center;gap:10px;font-size:13px"><span class="tag paid">✓ Yuklandi</span><b>${emFileName}</b>${emPeriod?`<span style="color:var(--txt-3)">· davr: ${emPeriod}</span>`:''}</div>`:''}
+      ${emFileName?`<div style="margin-top:12px;display:flex;align-items:center;gap:10px;font-size:13px;flex-wrap:wrap"><span class="tag paid">✓ Yuklandi</span><b>${emFileName}</b>
+        ${emResult?`<span style="color:var(--txt-3)">· faylda ${emResult.fileTotal} ta mehmon${emResult.filtered?` · tanlangan davrda <b>${emResult.total}</b> ta`:''}</span>`:''}</div>`:''}
     </div></div>
   ${resultHtml}`;
 }
