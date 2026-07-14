@@ -446,6 +446,7 @@ table.data tr:hover td{background:var(--panel-2)}
 .mini-hint{font-size:12px;color:var(--txt-3);padding:0 20px 14px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -1416,15 +1417,15 @@ function openFolio(id,keepEdit){
     actBtns+=gbtn('openInvoice','🧾 '+t('invoice'))+gbtn('doCancel','✕ Bekor qilish','danger');
   } else if(s.status==='in'){
     actBtns+=gbtn('doCheckout','🚪 Check-out','primary');
-    actBtns+=gGroup('₸','To\'lov',[['addFolioPay','₸ To\'lov qo\'shish'],['doCharge','＋ Qo\'shimcha to\'lov'],['doRefund','↩ To\'lov vozvrati']]);
-    actBtns+=gGroup('🛏','Hisob / yashash',[['doServiceAdd','➕ Yashash qo\'shish'],['doServiceRefund','➖ Yashash vozvrati'],['doEarlyLate','🕐 Erta kirish / Kech chiqish']]);
+    actBtns+=gGroup('₸','To\'lov / vozvrat',[['addFolioPay','₸ To\'lov qo\'shish'],['doRefund','↩ VOZVRAT (qaytarish)']]);
+    actBtns+=gGroup('🛏','Hisobga qo\'shish',[['doCharge','🧾 Xizmat qo\'shish (mini-bar, kir yuvish...)'],['doServiceAdd','➕ Yashash qo\'shish'],['doEarlyLate','🕐 Erta kirish / Kech chiqish']]);
     actBtns+=gGroup('↔','Xona',[['doMoveRoom','↔ Xona ko\'chirish'],['doExtend','📅 Muddatni cho\'zish'],['doMovePrice','💰 Narxni o\'zgartirish']]);
     actBtns+=gbtn('openInvoice','🧾 '+t('invoice'))+gbtn('doCancel','✕ Bekor qilish','danger');
   } else { // out
     if(role==='manager'){
       actBtns+=gbtn('doRestore','♻ Qayta tiklash (vastanavit)','primary');
-      actBtns+=gGroup('₸','To\'lov',[['addFolioPay','₸ To\'lov qo\'shish'],['doCharge','＋ Qo\'shimcha to\'lov'],['doRefund','↩ To\'lov vozvrati']]);
-      actBtns+=gGroup('🛏','Hisob / yashash',[['doServiceAdd','➕ Yashash qo\'shish'],['doServiceRefund','➖ Yashash vozvrati']]);
+      actBtns+=gGroup('₸','To\'lov / vozvrat',[['addFolioPay','₸ To\'lov qo\'shish'],['doRefund','↩ VOZVRAT (qaytarish)']]);
+      actBtns+=gGroup('🛏','Hisobga qo\'shish',[['doCharge','🧾 Xizmat qo\'shish'],['doServiceAdd','➕ Yashash qo\'shish']]);
       actBtns+=gGroup('↔','Xona',[['doMoveRoom','↔ Xona ko\'chirish'],['doExtend','📅 Muddatni cho\'zish'],['doPriceCorrect','💰 Narx korreksiyasi']]);
       actBtns+=gbtn('openInvoice','🧾 '+t('invoice'));
     } else {
@@ -1607,7 +1608,7 @@ function doRestore(id){
 let actState=null;
 function openActionModal(id,kind){
   const s=stays.find(x=>x.id===id);
-  actState={id,kind,amount:'',method:'karta',card:'UZCARD',price:s.nightly||Math.round(s.price/nights(s)),name:'',premicha:'',reason:'',newNights:nights(s),time:uzTime(),elType:'late',newDate:ymd(s.inDate)};
+  actState={id,kind,amount:'',method:'karta',card:'UZCARD',price:s.nightly||Math.round(s.price/nights(s)),name:'',premicha:'',reason:'',newNights:nights(s),time:uzTime(),elType:'late',newDate:ymd(s.inDate),rSel:''};
   drawActionModal();
 }
 function futureNightInfo(s){
@@ -1625,15 +1626,67 @@ function reasonField(){
 }
 function drawActionModal(){
   const a=actState, s=stays.find(x=>x.id===a.id);
-  const titles={pay:'To\'lov qo\'shish',price:'Narxni o\'zgartirish',refund:'To\'lov vozvrati (pul qaytarish)',srefund:'Yashash vozvrati (hisobdan chegirma)',sadd:'Yashash qo\'shish (hisobga qo\'shish)',charge:'Qo\'shimcha to\'lov (folioga)',cancel:'Bronni bekor qilish',extend:'Muddatni cho\'zish',correct:'Narx korreksiyasi (menejer)',checkout:'Check-out (chiqish)',earlylate:'Erta kirish / Kech chiqish',rebook:'Kelish sanasini o\'zgartirish'};
+  const titles={pay:'To\'lov qo\'shish',price:'Narxni o\'zgartirish',refund:'↩ Vozvrat (qaytarish)',srefund:'Yashash vozvrati (hisobdan chegirma)',sadd:'Yashash qo\'shish (hisobga qo\'shish)',charge:'Xizmat qo\'shish (mini-bar, kir yuvish...)',cancel:'Bronni bekor qilish',extend:'Muddatni cho\'zish',correct:'Narx korreksiyasi (menejer)',checkout:'Check-out (chiqish)',earlylate:'Erta kirish / Kech chiqish',rebook:'Kelish sanasini o\'zgartirish'};
   let bodyHtml='';
-  if(a.kind==='pay'||a.kind==='refund'){
+  if(a.kind==='refund'){
+    /* ===== YAGONA VOZVRAT OYNASI — hamma qaytariladigan narsa bir joyda ===== */
+    const pays=(s.payments||[]).map((p,i)=>({i,p})).filter(x=>x.p.type==='pay');
+    const items=(s.charges||[]).map((c,i)=>({i,c})).filter(x=>x.c.amount>0);   // faqat qo'shilganlar (manfiylar — allaqachon vozvrat)
+    const nightsList=nights(s);
+
+    const paySection = pays.length
+      ? pays.map(x=>`<div class="arr-item" style="cursor:pointer;${a.rSel==='pay:'+x.i?'background:var(--brand-bg,#eff4ff);border-color:var(--brand)':''}"
+            onclick="actState.rSel='pay:${x.i}';actState.amount=${x.p.amount};actState.method='${x.p.method}';actState.card='${x.p.card||''}';drawActionModal()">
+          <div class="ic pay" style="width:34px;height:34px;border-radius:9px;background:var(--green-bg);color:var(--green-ink);display:flex;align-items:center;justify-content:center;font-weight:700">₸</div>
+          <div class="who"><b>${money(x.p.amount)}</b><span>${x.p.method==='karta'?(x.p.card||'Karta'):methodLabel(x.p.method)} · ${x.p.time}</span></div>
+          <div class="tm">${a.rSel==='pay:'+x.i?'✓ tanlandi':'Tanlash →'}</div></div>`).join('')
+      : `<div class="mini-hint" style="padding:8px 12px">To'lov yo'q — qaytariladigan pul yo'q.</div>`;
+
+    const chargeSection = (items.length||nightsList)
+      ? (nightsList?`<div class="arr-item" style="cursor:pointer;${a.rSel==='stay'?'background:var(--brand-bg,#eff4ff);border-color:var(--brand)':''}"
+            onclick="actState.rSel='stay';actState.amount='';drawActionModal()">
+          <div class="ic" style="width:34px;height:34px;border-radius:9px;background:var(--amber-bg);color:var(--amber-ink);display:flex;align-items:center;justify-content:center">🛏</div>
+          <div class="who"><b>Yashash — ${money(s.price)}</b><span>${nightsList} tun · hisobdan chegirish</span></div>
+          <div class="tm">${a.rSel==='stay'?'✓ tanlandi':'Tanlash →'}</div></div>`:'')
+        + items.map(x=>`<div class="arr-item" style="cursor:pointer;${a.rSel==='chg:'+x.i?'background:var(--brand-bg,#eff4ff);border-color:var(--brand)':''}"
+            onclick="actState.rSel='chg:${x.i}';actState.amount=${x.c.amount};drawActionModal()">
+          <div class="ic" style="width:34px;height:34px;border-radius:9px;background:var(--panel-2);display:flex;align-items:center;justify-content:center">🧾</div>
+          <div class="who"><b>${x.c.name} — ${money(x.c.amount)}</b><span>${x.c.time||''} · hisobdan olib tashlash</span></div>
+          <div class="tm">${a.rSel==='chg:'+x.i?'✓ tanlandi':'Tanlash →'}</div></div>`).join('')
+      : `<div class="mini-hint" style="padding:8px 12px">Qo'shilgan xizmat yo'q.</div>`;
+
+    const isPay = (a.rSel||'').startsWith('pay:');
+    const maxAmt = isPay ? (pays.find(x=>'pay:'+x.i===a.rSel)||{p:{amount:0}}).p.amount
+                 : (a.rSel==='stay' ? s.price : ((s.charges||[])[+(a.rSel||'').split(':')[1]]||{amount:0}).amount);
+
     bodyHtml=`
-      <div class="field"><label>${a.kind==='refund'?'Qaytariladigan summa':'To\'lov summasi'} (so'm)</label>
+      <div style="background:var(--green-bg);border:1px solid var(--green);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+        <div style="font-weight:700;font-size:13px;color:var(--green-ink);margin-bottom:2px">1️⃣ PUL QAYTARISH — kassadan pul chiqadi</div>
+        <div style="font-size:11.5px;color:var(--txt-2)">Mehmon bergan pulni qaytarasiz. Kassa hisobotiga tushadi.</div>
+      </div>
+      ${paySection}
+      <div style="background:var(--amber-bg);border:1px solid var(--amber);border-radius:10px;padding:10px 12px;margin:14px 0 8px">
+        <div style="font-weight:700;font-size:13px;color:var(--amber-ink);margin-bottom:2px">2️⃣ HISOBDAN OLIB TASHLASH — kassaga tegmaydi</div>
+        <div style="font-size:11.5px;color:var(--txt-2)">Xato qo'shilgan xizmat/yashashni bekor qilasiz. Pul harakati YO'Q — faqat qarz kamayadi.</div>
+      </div>
+      ${chargeSection}
+      ${a.rSel?`
+        <div class="field" style="margin-top:14px"><label>Qaytariladigan summa (so'm)${maxAmt?` — ko'pi bilan ${money(maxAmt)}`:''}</label>
+          <input type="number" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="To'liq yoki qisman"></div>
+        ${isPay?`<div class="field"><label>Qaysi usulda qaytariladi</label><div id="actMethod">${actMethodHtml()}</div></div>`:''}
+        <div class="t-box" style="margin-top:6px">
+          <div class="t-row"><span>Jami hisob</span><b>${money(totalDue(s))}</b></div>
+          <div class="t-row"><span>To'langan</span><b>${money(paidSum(s))}</b></div>
+          <div class="t-row"><span>Joriy qarz</span><b style="color:${balance(s)>0?'var(--red-ink)':'var(--green-ink)'}">${money(balance(s))}</b></div>
+        </div>`
+      :`<div class="mini-hint" style="padding:12px 0 0;text-align:center;color:var(--txt-3)">⬆ Yuqoridan nimani qaytarishni tanlang</div>`}
+      <div class="mini-hint" style="padding:8px 0 0;color:var(--red-ink)">🔒 Har qanday vozvrat — <b>admin nazorati</b>ga va <b>folio tarixi</b>ga yoziladi. O'chirib bo'lmaydi.</div>`;
+  } else if(a.kind==='pay'){
+    bodyHtml=`
+      <div class="field"><label>To'lov summasi (so'm)</label>
         <input type="number" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 250000" autofocus></div>
-      <div class="field"><label>${a.kind==='refund'?'Qaysi usulda qaytariladi':'To\'lov usuli'}</label>
+      <div class="field"><label>To'lov usuli</label>
         <div id="actMethod">${actMethodHtml()}</div></div>
-      ${a.kind==='refund'?`<div class="mini-hint" style="padding:0 0 8px">Bu — mehmon <b>bergan pulni qaytarish</b>. Jami to'langan: <b>${money(paidSum(s))}</b>. To'lanmagan bo'lsa — ishlamaydi.</div>`:''}
       <div class="folio-meta" style="margin:4px 0 10px"><div class="m"><div class="k">Joriy qarz</div><div class="val money" style="color:var(--red-ink)">${money(balance(s))}</div></div></div>`;
   } else if(a.kind==='srefund'){
     bodyHtml=`
@@ -1661,7 +1714,7 @@ function drawActionModal(){
     bodyHtml=`
       <div class="field"><label>Nomi (nima uchun)</label><input id="actName" value="${a.name}" oninput="actState.name=this.value" placeholder="Masalan: Coca-Cola, mini-bar, kir yuvish" autofocus></div>
       <div class="field"><label>Summa (so'm)</label><input type="number" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 15000"></div>
-      <div class="mini-hint" style="padding:0">Hozir to'lash majburiy emas — qarzga qo'shiladi. Folio va hisobotga tushadi.</div>`;
+      <div class="mini-hint" style="padding:0;line-height:1.5">Bu — <b>pul emas</b>. Mehmon hisobiga (qarziga) qo'shiladi. Keyin to'laydi. Xato qo'shsangiz — <b>↩ Vozvrat</b> orqali olib tashlaysiz.</div>`;
   } else if(a.kind==='cancel'){
     bodyHtml=`<div class="mini-hint" style="padding:0 0 10px">⚠ Bron bekor qilinadi va shaxmatkada <b>binafsha</b> bo'lib qoladi (o'chib ketmaydi). Bu amal menejer jurnaliga yoziladi.</div>`;
   } else if(a.kind==='extend'){
@@ -1681,12 +1734,29 @@ function drawActionModal(){
         Eski narx: ${money(s.nightly||Math.round(s.price/nights(s)))} × ${nights(s)} tun = ${money(s.price)}.<br>
         ⚠ Bu <b>korreksiya</b> — narx xato kiritilgan bo'lsa, menejer <b>barcha kunlar</b>ni to'g'irlaydi (qotgan kunlar ham). Jurnalga yoziladi.</div>`;
   } else if(a.kind==='checkout'){
-    bodyHtml=`<div class="field"><label>Chiqish vaqti (O'zbekiston soati)</label>
+    const bookedN=nights(s);
+    const actN=Math.round((stripTime(base).getTime()-stripTime(s.inDate).getTime())/DAY);
+    const realN=Math.max(1,actN);
+    const newPrice=(s.rates||[]).slice(0,realN).reduce((x,y)=>x+y,0) + (actN>bookedN?(actN-bookedN)*(s.nightly||0):0);
+    const newTotal=newPrice+chargesSum(s);
+    const newBal=newTotal-paidSum(s);
+    let note='';
+    if(actN===0) note=`<div style="background:var(--amber-bg);color:var(--amber-ink);padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">🕐 <b>Kunduzgi chiqish</b> — o'sha kuni kirib, o'sha kuni chiqmoqda. <b>1 kun</b> hisoblanadi.</div>`;
+    else if(actN<bookedN) note=`<div style="background:var(--amber-bg);color:var(--amber-ink);padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">🌅 <b>Erta chiqish</b> — bron ${bookedN} tun edi, mehmon <b>${actN} tun</b> yashadi. Narx <b>${actN} tunga</b> qayta hisoblanadi.</div>`;
+    else if(actN>bookedN) note=`<div style="background:var(--amber-bg);color:var(--amber-ink);padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">🌙 <b>Kech chiqish</b> — bron ${bookedN} tun edi, mehmon <b>${actN} tun</b> yashadi. Qo'shimcha tunlar qo'shiladi.</div>`;
+    bodyHtml=`${note}
+      <div class="field"><label>Chiqish vaqti (O'zbekiston soati)</label>
       <input type="time" id="actTime" value="${a.time}" onchange="actState.time=this.value" autofocus></div>
-      <div class="mini-hint" style="padding:0 0 10px;line-height:1.5">
-        Chiqish sanasi: <b>${fmt(base)}</b> (bugun).<br>
-        Mehmon shu kuni kirgan bo'lsa — bron <b>kunduzgi</b> bo'lib, shaxmatkada faqat ${s.arrTime}–chiqish oralig'iga qisqaradi. Yoniga yangi mehmon uchun joy ochiladi.<br>
-        Kelish vaqti (${s.arrTime}) o'zgarmaydi.</div>`;
+      <div class="t-box">
+        <div class="t-row"><span>Yashagan tun</span><b>${realN} tun</b></div>
+        <div class="t-row"><span>Yashash</span><b>${money(newPrice)}</b></div>
+        ${chargesSum(s)?`<div class="t-row"><span>Xizmatlar</span><b>${money(chargesSum(s))}</b></div>`:''}
+        <div class="t-row"><span>Jami hisob</span><b>${money(newTotal)}</b></div>
+        <div class="t-row"><span>To'langan</span><b>${money(paidSum(s))}</b></div>
+        <div class="t-row" style="border-top:1px solid var(--line);padding-top:8px"><span><b>Qoldiq</b></span>
+          <b style="color:${newBal>0?'var(--red-ink)':'var(--green-ink)'}">${newBal>0?money(newBal)+' — QARZ':(newBal<0?money(-newBal)+' — ortiqcha':"To'langan ✓")}</b></div>
+      </div>
+      <div class="mini-hint" style="padding:8px 0 0;line-height:1.5">Chiqish sanasi: <b>${fmt(base)}</b> (bugun). Kelish vaqti (${s.arrTime}) o'zgarmaydi.</div>`;
   } else if(a.kind==='earlylate'){
     bodyHtml=`<div class="field"><label>${P("Turi")}</label>
       <div class="method-sel" style="max-width:340px">
@@ -1729,13 +1799,41 @@ function commitAction(){
     if(s.status==='in')logAction(s,'money',`Check-in'dan keyin to'lov (${a.method==='karta'?a.card:'naxt'})`,amt);
     toast('To\'lov qo\'shildi ✓',true);
   } else if(a.kind==='refund'){
-    const amt=+a.amount; if(!amt){toast('Summani kiriting.',false);return;}
-    const paid=paidSum(s);
-    if(paid<=0){ toast('Bu xonaga to\'lov qilinmagan — qaytariladigan pul yo\'q. Chegirma uchun "Yashash vozvrati" ishlating.',false); return; }
-    if(amt>paid){ toast(`To'langan summadan ko'p qaytarib bo'lmaydi (jami to'langan: ${money(paid)}).`,false); return; }
-    s.payments.push({amount:amt,method:a.method,card:a.method==='karta'?a.card:'',type:'ref',time:stamp,ts:new Date(base),by:role==='admin'?'Admin':'Menejer'});
-    logAction(s,'refund','To\'lov vozvrati (pul qaytarildi)',amt,a.reason);
-    toast('To\'lov vozvrati qayd etildi — menejerga yozildi',true);
+    /* ===== YAGONA VOZVRAT ===== */
+    const amt=+a.amount;
+    if(!a.rSel){ toast('Avval nimani qaytarishni tanlang.',false); return; }
+    if(!amt||amt<=0){ toast('Summani kiriting.',false); return; }
+
+    if(a.rSel.startsWith('pay:')){
+      /* 1) PUL QAYTARISH — kassadan chiqadi */
+      const idx=+a.rSel.split(':')[1];
+      const p=(s.payments||[])[idx];
+      if(!p||p.type!=='pay'){ toast('To\'lov topilmadi.',false); return; }
+      if(amt>p.amount){ toast(`Bu to'lovdan ko'p qaytarib bo'lmaydi (${money(p.amount)}).`,false); return; }
+      const paid=paidSum(s);
+      if(amt>paid){ toast(`Jami to'langandan ko'p qaytarib bo'lmaydi (${money(paid)}).`,false); return; }
+      s.payments.push({amount:amt,method:a.method||p.method,card:(a.method||p.method)==='karta'?(a.card||p.card||''):'',type:'ref',time:stamp,ts:new Date(base),by:role==='admin'?'Admin':'Menejer'});
+      logAction(s,'refund',`PUL QAYTARILDI (kassadan): ${money(amt)} · ${(a.method||p.method)==='karta'?(a.card||p.card||'Karta'):methodLabel(a.method||p.method)}`,amt,a.reason);
+      toast('Pul qaytarildi — kassadan chiqdi. Nazoratga yozildi ✓',true);
+
+    } else if(a.rSel==='stay'){
+      /* 2a) YASHASHNI hisobdan chegirish — kassaga tegmaydi */
+      if(amt>s.price){ toast(`Yashash narxidan ko'p chegirib bo'lmaydi (${money(s.price)}).`,false); return; }
+      s.charges=s.charges||[];
+      s.charges.push({name:'Yashash — hisobdan chegirildi',amount:-Math.abs(amt),premicha:a.premicha,time:stamp,by:role==='admin'?'Admin':'Menejer'});
+      logAction(s,'refund',`HISOBDAN CHEGIRILDI (yashash): ${money(amt)} — pul harakati yo'q, qarz kamaydi`,0,a.reason);
+      toast('Hisobdan chegirildi — kassaga tegmadi. Nazoratga yozildi ✓',true);
+
+    } else if(a.rSel.startsWith('chg:')){
+      /* 2b) XIZMATNI hisobdan olib tashlash — kassaga tegmaydi */
+      const idx=+a.rSel.split(':')[1];
+      const c=(s.charges||[])[idx];
+      if(!c){ toast('Xizmat topilmadi.',false); return; }
+      if(amt>c.amount){ toast(`Bu xizmatdan ko'p olib tashlab bo'lmaydi (${money(c.amount)}).`,false); return; }
+      s.charges.push({name:`${c.name} — bekor qilindi`,amount:-Math.abs(amt),premicha:a.premicha,time:stamp,by:role==='admin'?'Admin':'Menejer'});
+      logAction(s,'refund',`HISOBDAN OLIB TASHLANDI: ${c.name} — ${money(amt)} — pul harakati yo'q`,0,a.reason);
+      toast('Hisobdan olib tashlandi — kassaga tegmadi. Nazoratga yozildi ✓',true);
+    }
   } else if(a.kind==='srefund'){
     const amt=+a.amount; if(!amt){toast('Summani kiriting.',false);return;}
     // yashash (prajivaniye) vozvrati — hisobdan chegirma (pul harakati yo'q, qarz kamayadi)
@@ -1760,8 +1858,8 @@ function commitAction(){
   } else if(a.kind==='charge'){
     const amt=+a.amount; if(!a.name||!amt){toast('Nom va summani kiriting.',false);return;}
     s.charges=s.charges||[]; s.charges.push({name:a.name,amount:amt,premicha:a.premicha,time:stamp,by:role==='admin'?'Admin':'Menejer'});
-    logAction(s,'money',`Qo'shimcha to'lov: ${a.name}`,amt);
-    toast('Qo\'shimcha to\'lov folioga qo\'shildi ✓',true);
+    logAction(s,'money',`Xizmat qo'shildi: ${a.name}`,amt);
+    toast('Xizmat hisobga qo\'shildi ✓ (pul emas — qarzga qo\'shildi)',true);
   } else if(a.kind==='cancel'){
     if(s.status==='book'){
       logAction(s,'refund','Bron o\'chirildi (check-in bo\'lmagan)',0,a.reason);
@@ -1814,22 +1912,41 @@ function commitAction(){
 }
 function doCheckout(id){
   const s=stays.find(x=>x.id===id); if(!s)return;
-  // 3 kunga bron qilinib, muddat hali tugamagan bo'lsa — to'g'ridan check-out mumkin emas
-  if(stripTime(s.outDate).getTime() > base.getTime()+DAY){
-    toast(`Xatolik: bu bron ${fmt(s.outDate)} gacha. Avval "Muddatni cho'zish" orqali muddatni to'g'irlang, keyin check-out qiling.`,false);
-    return;
-  }
+  // Erta yoki kech chiqish — bloklamaymiz. Check-out haqiqiy yashagan tun bo'yicha
+  // narxni O'ZI qayta hisoblaydi (commitCheckout ichida).
   openActionModal(id,'checkout');
 }
 function commitCheckout(id,tm){
   const s=stays.find(x=>x.id===id); if(!s)return;
   s.status='out'; s.checkoutTime=tm||uzTime(); s.checkoutDate=new Date(base);
-  // agar o'sha kuni kirib o'sha kuni chiqsa — kunduzgi bo'lib, bar o'sha kunda qoladi (keyingi kunga o'tmaydi)
-  if(stripTime(base).getTime()===stripTime(s.inDate).getTime()){
-    s._preOut=s.outDate;                 // asl chiqish sanasi (vastanavit uchun saqlaymiz)
+  s._preOut=s.outDate;   // asl chiqish sanasi (vastanavit uchun saqlaymiz)
+
+  // ⚠️ HAQIQIY yashagan tun soni (kelgan kundan bugungacha)
+  const bookedN=nights(s);
+  const actualN=Math.round((stripTime(base).getTime()-stripTime(s.inDate).getTime())/DAY);
+
+  if(actualN===0){
+    // o'sha kuni kirib o'sha kuni chiqdi — KUNDUZGI (bar o'sha kunda qoladi)
     s.outDate=new Date(base);
-    if(!s.rates||!s.rates.length)s.rates=[s.nightly||s.price]; recalc(s);
+    if(!s.rates||!s.rates.length) s.rates=[s.nightly||s.price];
+    else s.rates=s.rates.slice(0,1);
+    recalc(s);
+    if(bookedN>1) logAction(s,'move',`Kunduzgi chiqish: ${bookedN} tun o'rniga 1 kun hisoblandi — narx qayta hisoblandi`,0);
+  } else if(actualN<bookedN){
+    // ERTA CHIQISH — faqat yashagan tunlar hisoblanadi
+    s.outDate=new Date(base);
+    s.rates=s.rates.slice(0,actualN);
+    recalc(s);
+    logAction(s,'move',`Erta chiqish: ${bookedN} tun o'rniga ${actualN} tun hisoblandi — narx qayta hisoblandi`,0);
+    toast(`Erta chiqish: ${actualN} tun uchun hisoblandi (${bookedN} emas) ✓`,true);
+  } else if(actualN>bookedN){
+    // KECH CHIQISH — qo'shimcha tunlar qo'shiladi
+    s.outDate=new Date(base);
+    for(let i=bookedN;i<actualN;i++) s.rates[i]=s.nightly||s.rates[bookedN-1]||0;
+    recalc(s);
+    logAction(s,'move',`Kech chiqish: ${bookedN} → ${actualN} tun — narx qayta hisoblandi`,0);
   }
+
   logAction(s,'out',`Check-out: ${fmt(base)} · ${s.checkoutTime}`,0);
   closeAction(); closeFolio(); render(); toast('Check-out bajarildi ✓',true);
 }
@@ -2182,106 +2299,260 @@ function renderNazorat(){
       <table class="data"><thead><tr><th>${P("Vaqt")}</th><th>${P("Xona")}</th><th>${P("Mehmon")}</th><th>${P("Nima qilindi")}</th><th>${P("Summa")}</th><th>${P("Sabab")}</th><th>${P("Kim")}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
-/* ================= E-MEHMON TAQQOSLASH (Word'dan tashlab, vaqt farqi bo'yicha) ================= */
-let emehmonText='', emResult=null, emDate='', emArchive={};
-function setEmTol(v){ emehmonTolerance=Math.max(0,+v||0); if(emResult)runEmehmon(); else render(); }
-function setEmDate(v){ emDate=v; const a=emArchive[v]; emehmonText=a?a.text:''; emResult=a?a.result:null; render(); }
+/* ================= E-MEHMON TAQQOSLASH — EXCEL FAYLDAN AVTOMAT ================= */
+let emResult=null, emArchive={}, emFileName='', emPeriod='';
+
+function setEmTol(v){ emehmonTolerance=Math.max(0,+v||0); if(emResult&&emResult.raw) emCompare(emResult.raw); else render(); }
 function toMin(hhmm){ const m=(hhmm||'').match(/(\d{1,2}):(\d{2})/); return m?(+m[1]*60+ +m[2]):null; }
-function runEmehmon(){
-  emehmonText=document.getElementById('emText')?.value||emehmonText;
-  // Word'dan tashlangan matn: har qatorda xona (2-4 raqam), vaqt (HH:MM), qolgani ism
-  const parsed=emehmonText.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{
-    const tm=(l.match(/\d{1,2}:\d{2}/)||[])[0]||'';
-    const room=(l.match(/\b\d{2,4}\b/)||[])[0]||'';
-    let name=l.replace(tm,'').replace(new RegExp('\\b'+room+'\\b'),'').replace(/[\t;,|]+/g,' ').trim();
-    return {room,name,time:tm};
-  }).filter(x=>x.room);
-  // E-mehmon xona bo'yicha guruh (bir xonada bir necha kishi bo'lishi mumkin)
-  const emByRoom={};
-  parsed.forEach(p=>{ (emByRoom[p.room]=emByRoom[p.room]||[]).push(p); });
-  // PMS: tanlangan kunda kirgan mehmonlar, xona bo'yicha (kishi soni = asosiy + sheriklar)
-  const sel=emDate||ymd(base);
-  const selD=new Date(+sel.split('-')[0],+sel.split('-')[1]-1,+sel.split('-')[2]); selD.setHours(0,0,0,0);
-  const pmsToday=stays.filter(s=>stripTime(s.inDate).getTime()===selD.getTime() && (s.status==='in'||s.status==='out'));
-  const pmsByRoom={};
-  pmsToday.forEach(s=>{ pmsByRoom[s.room]={stay:s,count:1+((s.extra||[]).length)}; });
-  const roomSet=new Set([...Object.keys(pmsByRoom),...Object.keys(emByRoom)]);
-  const rows=[];
-  [...roomSet].sort().forEach(R=>{
-    const pm=pmsByRoom[R], em=emByRoom[R];
-    const pmsCount=pm?pm.count:0, emCount=em?em.length:0;
-    if(pm && em){
-      if(pmsCount!==emCount){
-        rows.push({room:R,name:pm.stay.firstName+' '+pm.stay.lastName,pmsTime:pm.stay.arrTime,emTime:em[0].time||'—',diff:null,pmsCount,emCount,flag:'count'});
-      } else {
-        const d1=toMin(pm.stay.arrTime), d2=toMin(em[0].time), diff=(d1!=null&&d2!=null)?Math.abs(d1-d2):null;
-        const ok=diff!=null && diff<=emehmonTolerance;
-        rows.push({room:R,name:pm.stay.firstName+' '+pm.stay.lastName,pmsTime:pm.stay.arrTime,emTime:em[0].time||'—',diff,pmsCount,emCount,flag:ok?'ok':'time'});
+
+/* --- Ismni tozalash: katta harf, apostroflar, ortiqcha bo'shliq --- */
+function normName(x){
+  return (x||'').toString().toUpperCase()
+    .replace(/[\u2018\u2019\u02BC\u02BB`'`]/g,"'")   // har xil apostroflarni bittaga
+    .replace(/[^A-Z' ]/g,' ')                        // faqat lotin harf
+    .replace(/\s+/g,' ').trim();
+}
+/* --- 2 ta ism qanchalik o'xshash (0..1) — Levenshtein --- */
+function simRatio(a,b){
+  a=normName(a); b=normName(b);
+  if(!a||!b) return 0;
+  if(a===b) return 1;
+  const la=a.length, lb=b.length;
+  const d=[]; for(let i=0;i<=la;i++){ d[i]=[i]; }
+  for(let j=0;j<=lb;j++) d[0][j]=j;
+  for(let i=1;i<=la;i++) for(let j=1;j<=lb;j++)
+    d[i][j]=Math.min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+  return 1 - d[la][lb]/Math.max(la,lb);
+}
+/* --- E-mehmon ismi: "FAMILIYA ISM OTASI" → familiya+ism olamiz (otasining ismi tashlanadi) --- */
+function emNameKey(full){
+  const parts=normName(full).split(' ').filter(Boolean);
+  return parts.slice(0,2).join(' ');   // FAMILIYA ISM
+}
+function pmsNameKey(s){
+  return normName((s.lastName||'')+' '+(s.firstName||''));
+}
+function pmsNameKeyG(g){
+  return normName((g.lastName||'')+' '+(g.firstName||''));
+}
+/* --- Excel sanasi: "11.07.2026 14:59" → {d:'2026-07-11', t:'14:59'} --- */
+function emParseDT(v){
+  if(v==null||v==='') return {d:'',t:''};
+  if(v instanceof Date){
+    const p=n=>String(n).padStart(2,'0');
+    return {d:v.getFullYear()+'-'+p(v.getMonth()+1)+'-'+p(v.getDate()), t:p(v.getHours())+':'+p(v.getMinutes())};
+  }
+  const str=v.toString().trim();
+  const m=str.match(/(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if(m){
+    const p=n=>String(n).padStart(2,'0');
+    return {d:m[3]+'-'+p(m[2])+'-'+p(m[1]), t:m[4]?p(m[4])+':'+m[5]:''};
+  }
+  return {d:'',t:''};
+}
+
+/* --- EXCEL FAYLNI O'QISH --- */
+function emUpload(input){
+  const file=input.files&&input.files[0];
+  if(!file){ return; }
+  emFileName=file.name;
+  if(typeof XLSX==='undefined'){ toast("Excel o'qish kutubxonasi yuklanmadi. Internetni tekshiring va sahifani yangilang.",false); return; }
+  const rd=new FileReader();
+  rd.onload=e=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const arr=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
+      // Sarlavha qatorini topamiz (ichida "КОМНАТ" yoki "Ф.И.О" bo'lgan qator)
+      let hi=-1;
+      for(let i=0;i<Math.min(arr.length,15);i++){
+        const line=(arr[i]||[]).join('|').toUpperCase();
+        if(line.indexOf('Ф.И.О')>=0 || line.indexOf('КОМНАТ')>=0){ hi=i; break; }
       }
-    } else if(pm && !em){
-      rows.push({room:R,name:pm.stay.firstName+' '+pm.stay.lastName,pmsTime:pm.stay.arrTime,emTime:'—',diff:null,pmsCount,emCount:0,flag:'missEm'});
+      if(hi<0){ toast("Fayl tanilmadi. E-mehmon (UZBEKTURIZM) eksport faylini yuklang.",false); return; }
+      const hdr=(arr[hi]||[]).map(x=>x.toString().toUpperCase().trim());
+      const col=(...keys)=>{ for(const k of keys){ const i=hdr.findIndex(h=>h.indexOf(k)>=0); if(i>=0) return i; } return -1; };
+      const cName=col('Ф.И.О','ГОСТЯ'), cRoom=col('КОМНАТ','НОМЕР КОМ'),
+            cIn=col('ЗАЕЗДА'), cOut=col('ВЫЕЗДА'), cPass=col('ПАСПОРТ');
+      if(cName<0||cRoom<0){ toast("Faylda 'Ф.И.О ГОСТЯ' yoki 'НОМЕР КОМНАТЫ' ustuni topilmadi.",false); return; }
+      const raw=[];
+      for(let i=hi+1;i<arr.length;i++){
+        const r=arr[i]||[];
+        const nm=(r[cName]||'').toString().trim();
+        const rm=(r[cRoom]||'').toString().trim();
+        if(!nm||!rm) continue;
+        const IN=emParseDT(r[cIn]), OUT=emParseDT(r[cOut]);
+        raw.push({ name:nm, room:rm, pass:cPass>=0?(r[cPass]||'').toString().trim():'',
+                   inD:IN.d, inT:IN.t, outD:OUT.d, outT:OUT.t });
+      }
+      if(!raw.length){ toast("Faylda mehmon topilmadi.",false); return; }
+      emCompare(raw);
+      toast(`✓ ${raw.length} ta mehmon o'qildi — taqqoslanmoqda...`,true);
+    }catch(err){ toast("Faylni o'qishda xato: "+err.message,false); }
+  };
+  rd.readAsArrayBuffer(file);
+}
+
+/* --- ASOSIY TAQQOSLASH --- */
+function emCompare(raw){
+  // 1) Faylning DAVRINI aniqlaymiz (cheklov yo'q — fayl qanday bo'lsa shunday)
+  const allD=raw.map(r=>r.inD).filter(Boolean).sort();
+  const d1=allD[0]||'', d2=raw.map(r=>r.outD).filter(Boolean).sort().slice(-1)[0]||allD.slice(-1)[0]||'';
+  emPeriod=(d1&&d2)?(d1.split('-').reverse().join('.')+' — '+d2.split('-').reverse().join('.')):'';
+
+  // 2) PMS: shu davrda kirgan mehmonlar (har bir KISHI alohida: asosiy + sheriklar)
+  const from=d1?new Date(+d1.split('-')[0],+d1.split('-')[1]-1,+d1.split('-')[2]):new Date(0);
+  const to=d2?new Date(+d2.split('-')[0],+d2.split('-')[1]-1,+d2.split('-')[2]):new Date(9e15);
+  to.setHours(23,59,59,999);
+  const pmsPeople=[];
+  stays.filter(s=>(s.status==='in'||s.status==='out') && stripTime(s.inDate)>=stripTime(from) && stripTime(s.inDate)<=to)
+    .forEach(s=>{
+      pmsPeople.push({key:pmsNameKey(s), disp:s.firstName+' '+s.lastName, room:s.room, stay:s,
+        inD:ymd(s.inDate), inT:s.arrTime||'', outD:s.checkoutDate?ymd(s.checkoutDate):ymd(s.outDate), outT:s.checkoutTime||'', main:true});
+      (s.extra||[]).forEach(g=>{
+        pmsPeople.push({key:pmsNameKeyG(g), disp:((g.firstName||'')+' '+(g.lastName||'')).trim()||'(ismi yozilmagan)', room:s.room, stay:s,
+          inD:ymd(s.inDate), inT:s.arrTime||'', outD:s.checkoutDate?ymd(s.checkoutDate):ymd(s.outDate), outT:s.checkoutTime||'', main:false});
+      });
+    });
+
+  // 3) KISHI bo'yicha moslash (ism + familiya, 85% o'xshashlik yetadi)
+  const usedPms=new Set();
+  const rows=[];
+  raw.forEach(e=>{
+    const ek=emNameKey(e.name);
+    let best=null, bestScore=0;
+    pmsPeople.forEach((p,i)=>{
+      if(usedPms.has(i)) return;
+      // ism ikki tomonlama (Familiya Ism / Ism Familiya) tekshiriladi
+      const sc=Math.max(simRatio(ek,p.key), simRatio(ek,p.key.split(' ').reverse().join(' ')));
+      if(sc>bestScore){ bestScore=sc; best={i,p}; }
+    });
+    if(best && bestScore>=0.85){
+      usedPms.add(best.i);
+      const p=best.p;
+      const problems=[];
+      // kelish vaqti
+      const t1=toMin(p.inT), t2=toMin(e.inT);
+      let dIn=null;
+      if(t1!=null&&t2!=null){
+        dIn=Math.abs(t1-t2);
+        if(p.inD!==e.inD) problems.push(`Kelish SANASI farq: PMS ${p.inD.split('-').reverse().join('.')} · E-mehmon ${e.inD.split('-').reverse().join('.')}`);
+        else if(dIn>emehmonTolerance) problems.push(`Kelish vaqti farq: ${dIn}′ (PMS ${p.inT} · E-mehmon ${e.inT})`);
+      }
+      // ketish vaqti
+      const o1=toMin(p.outT), o2=toMin(e.outT);
+      let dOut=null;
+      if(o1!=null&&o2!=null){
+        dOut=Math.abs(o1-o2);
+        if(p.outD!==e.outD) problems.push(`Ketish SANASI farq: PMS ${p.outD.split('-').reverse().join('.')} · E-mehmon ${e.outD.split('-').reverse().join('.')}`);
+        else if(dOut>emehmonTolerance) problems.push(`Ketish vaqti farq: ${dOut}′ (PMS ${p.outT} · E-mehmon ${e.outT})`);
+      }
+      if(p.room!==e.room) problems.push(`Xona farq: PMS ${p.room} · E-mehmon ${e.room}`);
+      rows.push({ room:e.room, emName:e.name, pmsName:p.disp, sim:Math.round(bestScore*100),
+        pmsIn:(p.inD?p.inD.split('-').reverse().join('.'):'—')+' '+(p.inT||''), emIn:(e.inD?e.inD.split('-').reverse().join('.'):'—')+' '+(e.inT||''),
+        pmsOut:(p.outD?p.outD.split('-').reverse().join('.'):'—')+' '+(p.outT||''), emOut:(e.outD?e.outD.split('-').reverse().join('.'):'—')+' '+(e.outT||''),
+        stayId:p.stay.id, flag:problems.length?'diff':'ok', problems });
     } else {
-      rows.push({room:R,name:em[0].name||'(ism yo\'q)',pmsTime:'—',emTime:em[0].time,diff:null,pmsCount:0,emCount,flag:'missPms'});
+      // E-mehmonda bor — PMS'da YO'Q
+      rows.push({ room:e.room, emName:e.name, pmsName:'—', sim:0,
+        pmsIn:'—', emIn:(e.inD?e.inD.split('-').reverse().join('.'):'—')+' '+(e.inT||''),
+        pmsOut:'—', emOut:(e.outD?e.outD.split('-').reverse().join('.'):'—')+' '+(e.outT||''),
+        stayId:'', flag:'missPms', problems:['🚨 PMS\'da bu mehmon YO\'Q — naqd olinib, dasturga yozilmagan bo\'lishi mumkin!'] });
     }
   });
-  emResult=rows; emArchive[sel]={text:emehmonText,result:rows}; render();
+  // PMS'da bor, E-mehmonda YO'Q
+  pmsPeople.forEach((p,i)=>{
+    if(usedPms.has(i)) return;
+    rows.push({ room:p.room, emName:'—', pmsName:p.disp, sim:0,
+      pmsIn:p.inD.split('-').reverse().join('.')+' '+(p.inT||''), emIn:'—',
+      pmsOut:(p.outD?p.outD.split('-').reverse().join('.'):'—')+' '+(p.outT||''), emOut:'—',
+      stayId:p.stay.id, flag:'missEm', problems:['🚨 E-mehmonga RO\'YXATDAN O\'TKAZILMAGAN!'] });
+  });
+
+  // 4) XONA bo'yicha kishi soni
+  const emRoomCnt={}, pmsRoomCnt={};
+  raw.forEach(e=>{ emRoomCnt[e.room]=(emRoomCnt[e.room]||0)+1; });
+  pmsPeople.forEach(p=>{ pmsRoomCnt[p.room]=(pmsRoomCnt[p.room]||0)+1; });
+  const roomRows=[];
+  [...new Set([...Object.keys(emRoomCnt),...Object.keys(pmsRoomCnt)])].sort().forEach(R=>{
+    const pc=pmsRoomCnt[R]||0, ec=emRoomCnt[R]||0;
+    roomRows.push({room:R,pms:pc,em:ec,ok:pc===ec});
+  });
+
+  rows.sort((a,b)=>(a.flag==='ok'?1:0)-(b.flag==='ok'?1:0) || a.room.localeCompare(b.room));
+  emResult={rows,roomRows,raw,total:raw.length,pmsTotal:pmsPeople.length};
+  emArchive[ymd(base)+'_'+(emFileName||'fayl')]={period:emPeriod,rows,roomRows,when:uzTime()+' · '+fmt(base)};
+  render();
 }
+
 function renderEmehmon(){
-  const sel=emDate||ymd(base);
-  const savedDays=Object.keys(emArchive).sort().reverse();
-  const selDateObj=new Date(+sel.split('-')[0],+sel.split('-')[1]-1,+sel.split('-')[2]);
   const tolInput=`<input type="number" min="0" value="${emehmonTolerance}" onchange="setEmTol(this.value)" style="width:64px;padding:6px 8px;border:1.5px solid var(--line);border-radius:7px;text-align:center;font-weight:600">`;
   let resultHtml='';
   if(emResult){
-    const ok=emResult.filter(r=>r.flag==='ok').length, bad=emResult.length-ok;
-    const table=emResult.map(r=>{
+    const R=emResult.rows;
+    const ok=R.filter(r=>r.flag==='ok').length;
+    const missPms=R.filter(r=>r.flag==='missPms').length;
+    const missEm=R.filter(r=>r.flag==='missEm').length;
+    const diff=R.filter(r=>r.flag==='diff').length;
+    const badRooms=emResult.roomRows.filter(r=>!r.ok);
+
+    const table=R.map(r=>{
       const flag=r.flag==='ok'?'<span class="flag flag-ok">Mos ✓</span>'
-        :r.flag==='time'?`<span class="flag flag-miss">Vaqt farqi ${r.diff}′ &gt; ${emehmonTolerance}′</span>`
-        :r.flag==='count'?`<span class="flag flag-miss">Kishi soni farq! PMS ${r.pmsCount} · E-mehmon ${r.emCount}</span>`
-        :r.flag==='missEm'?'<span class="flag flag-miss">E-mehmonda YO\'Q</span>':'<span class="flag flag-miss">PMSda yo\'q</span>';
+        :r.flag==='missPms'?'<span class="flag flag-miss">PMS\'da YO\'Q 🚨</span>'
+        :r.flag==='missEm'?'<span class="flag flag-miss">E-mehmonda YO\'Q 🚨</span>'
+        :'<span class="flag flag-miss">Farq bor</span>';
       const bg=r.flag==='ok'?'':'background:var(--red-bg)';
-      const cntBad=r.flag==='count';
-      return `<tr style="${bg}"><td><b class="mono">${r.room}</b></td><td><b>${r.name}</b></td>
-        <td style="text-align:center;${cntBad?'color:var(--red-ink);font-weight:700':''}">${r.pmsCount||'—'}</td>
-        <td style="text-align:center;${cntBad?'color:var(--red-ink);font-weight:700':''}">${r.emCount||'—'}</td>
-        <td style="text-align:center">${r.pmsTime}</td><td style="text-align:center">${r.emTime}</td>
-        <td style="text-align:center">${r.diff!=null?r.diff+'′':'—'}</td><td>${flag}</td></tr>`;
+      const probs=r.problems.length?`<div style="font-size:11.5px;color:var(--red-ink);margin-top:3px">${r.problems.join('<br>')}</div>`:'';
+      return `<tr style="${bg};cursor:${r.stayId?'pointer':'default'}" ${r.stayId?`onclick="openFolio('${r.stayId}')"`:''}>
+        <td><b class="mono">${r.room}</b></td>
+        <td><b>${r.pmsName}</b>${r.sim&&r.sim<100?` <span class="tag book" style="font-size:10px">${r.sim}% o'xshash</span>`:''}${probs}</td>
+        <td>${r.emName}</td>
+        <td style="font-size:12px">${r.pmsIn}<br><span style="color:var(--txt-3)">${r.pmsOut}</span></td>
+        <td style="font-size:12px">${r.emIn}<br><span style="color:var(--txt-3)">${r.emOut}</span></td>
+        <td>${flag}</td></tr>`;
     }).join('');
+
+    const roomTable=badRooms.length?`
+      <div class="panel"><div class="panel-h"><h3>⚠ Xonalarda kishi soni farq qiladi</h3></div>
+      <table class="data"><thead><tr><th>Xona</th><th style="text-align:center">PMS (kishi)</th><th style="text-align:center">E-mehmon (kishi)</th><th>Natija</th></tr></thead><tbody>
+      ${badRooms.map(r=>`<tr style="background:var(--red-bg)"><td><b class="mono">${r.room}</b></td>
+        <td style="text-align:center;font-weight:700">${r.pms}</td>
+        <td style="text-align:center;font-weight:700">${r.em}</td>
+        <td><span class="flag flag-miss">${r.pms>r.em?`${r.pms-r.em} kishi E-mehmonga kiritilmagan!`:`${r.em-r.pms} kishi PMS'da yo'q!`}</span></td></tr>`).join('')}
+      </tbody></table></div>`:'';
+
     resultHtml=`<div class="cmp-summary">
-      <div class="cmp-card match"><div class="n">${emResult.length}</div><div class="t">Jami xona</div></div>
-      <div class="cmp-card ok"><div class="n">${ok}</div><div class="t">Mos</div></div>
-      <div class="cmp-card miss"><div class="n">${bad}</div><div class="t">Muammo (qizil)</div></div>
+      <div class="cmp-card match"><div class="n">${emResult.total}</div><div class="t">E-mehmonda</div></div>
+      <div class="cmp-card match"><div class="n">${emResult.pmsTotal}</div><div class="t">PMS'da</div></div>
+      <div class="cmp-card ok"><div class="n">${ok}</div><div class="t">Mos ✓</div></div>
+      <div class="cmp-card miss"><div class="n">${missEm}</div><div class="t">E-mehmonda yo'q</div></div>
+      <div class="cmp-card miss"><div class="n">${missPms}</div><div class="t">PMS'da yo'q</div></div>
+      <div class="cmp-card miss"><div class="n">${diff}</div><div class="t">Vaqt/sana farq</div></div>
     </div>
-    <div class="panel"><div class="panel-h"><h3>Natija — ${fmt(selDateObj)}</h3><span class="spacer"></span>
-      <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px" onclick="printPage('E-mehmon taqqoslash')">🖨 ${P('Chop etish')}</button></div>
-      <table class="data"><thead><tr><th>${P("Xona")}</th><th>${P("Mehmon")}</th><th style="text-align:center">${P("PMS kishi")}</th><th style="text-align:center">${P("E-mehmon kishi")}</th><th style="text-align:center">${P("PMS vaqti")}</th><th style="text-align:center">${P("E-mehmon")}</th><th style="text-align:center">${P("Farq")}</th><th>${P("Natija")}</th></tr></thead><tbody>${table}</tbody></table></div>`;
+    ${roomTable}
+    <div class="panel"><div class="panel-h"><h3>Solishtirish natijasi${emPeriod?' — '+emPeriod:''}</h3><span class="spacer"></span>
+      <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px" onclick="exportPageExcel()">⤓ Excel</button>
+      <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px" onclick="printCurrentPage()">🖨 ${P('Chop etish')}</button></div>
+      <table class="data"><thead><tr><th>Xona</th><th>PMS mehmoni</th><th>E-mehmon (fayl)</th><th>PMS kelish/ketish</th><th>E-mehmon kelish/ketish</th><th>Natija</th></tr></thead>
+      <tbody>${table}</tbody></table></div>`;
   }
+
   return `<div class="hint" style="background:#eff4ff;color:var(--brand-ink)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M5 8l-3 4 3 4M19 8l3 4-3 4"/></svg>
-    <span>Menejer E-mehmon dasturidagi mehmonlarni <b>Word'dan nusxalab</b> quyidagi oynaga tashlaydi → dastur PMS bilan taqqoslaydi. Vaqt farqi yoki kishi soni farq bo'lsa — <b>qizil</b>. Har kun sana bo'yicha saqlanadi, hech kim o'chira olmaydi.</span></div>
+    <span>E-mehmon (UZBEKTURIZM) dan <b>Excel faylni yuklab</b> shu yerga tashlang — dastur PMS bilan <b>o'zi solishtiradi</b>. Ism, kelish/ketish sanasi va vaqti, xonadagi kishi soni tekshiriladi. Istagan davr uchun — cheklov yo'q.</span></div>
 
-  <div class="panel" style="margin-bottom:14px"><div style="display:flex;align-items:center;gap:12px;padding:12px 16px;flex-wrap:wrap">
-    <span style="font-weight:600;font-size:13px">📅 Qaysi kun uchun:</span>
-    <input type="date" value="${sel}" onchange="setEmDate(this.value)" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px">
-    ${savedDays.length?`<div class="seg" style="flex-wrap:wrap"><span style="font-size:11px;color:var(--txt-3);align-self:center;padding:0 4px">Saqlangan:</span>${savedDays.slice(0,7).map(d=>{const p=d.split('-');return `<button class="${d===sel?'on':''}" onclick="setEmDate('${d}')">${p[2]}.${p[1]} ✓</button>`;}).join('')}</div>`:''}
-    <span style="margin-left:auto;font-size:11px;color:var(--txt-3)">🔒 O'chirib bo'lmaydi</span>
-  </div></div>
-
-  <div class="panel"><div class="panel-h"><h3>${P("E-mehmon ma'lumotini tashlang")}</h3><span class="spacer"></span>
-    <span style="font-size:12px;color:var(--txt-2)">Ruxsat etilgan farq (daqiqa):</span> ${tolInput}</div>
-    <div style="padding:16px 20px">
-      <textarea id="emText" rows="5" placeholder="Word'dan nusxalab shu yerga tashlang. Masalan har qatorda:&#10;101   Sardor Aliyev   08:05&#10;102   Dilnoza Karimova   13:00&#10;301   Rustam Ergashev   11:55" style="width:100%;padding:12px;border:1.5px solid var(--line);border-radius:9px;font-family:'JetBrains Mono';font-size:13px">${emehmonText}</textarea>
-      <button class="btn btn-primary" style="margin-top:12px;padding:10px 20px" onclick="runEmehmon()">${sel===ymd(base)?'Taqqoslash':'Shu kun uchun taqqoslash'}</button>
-      <button class="btn btn-ghost" style="margin-top:12px;padding:10px 16px" onclick="emDemo()">Namuna bilan sinash</button>
+  <div class="panel" style="margin-bottom:14px"><div class="panel-h"><h3>📤 E-mehmon Excel faylini yuklang</h3><span class="spacer"></span>
+    <span style="font-size:12px;color:var(--txt-2)">Ruxsat etilgan vaqt farqi (daqiqa):</span> ${tolInput}</div>
+    <div style="padding:18px 20px">
+      <label style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:26px;border:2px dashed var(--line-2);border-radius:12px;cursor:pointer;background:var(--panel-2);transition:.15s"
+        onmouseover="this.style.borderColor='var(--brand)'" onmouseout="this.style.borderColor='var(--line-2)'">
+        <div style="font-size:32px">📄</div>
+        <div style="font-weight:700;font-size:14px">Excel faylni tanlang yoki shu yerga tashlang</div>
+        <div style="font-size:12px;color:var(--txt-3)">E-mehmon → "Chiqib ketgan mehmonlar" → Excelga eksport (.xlsx)</div>
+        <input type="file" accept=".xlsx,.xls" onchange="emUpload(this)" style="display:none">
+      </label>
+      ${emFileName?`<div style="margin-top:12px;display:flex;align-items:center;gap:10px;font-size:13px"><span class="tag paid">✓ Yuklandi</span><b>${emFileName}</b>${emPeriod?`<span style="color:var(--txt-3)">· davr: ${emPeriod}</span>`:''}</div>`:''}
     </div></div>
   ${resultHtml}`;
-}
-function emDemo(){
-  const d7=new Date(base.getTime()-7*DAY); // 03.01 — o'sha kuni 301 va 104 kelgan
-  emDate=ymd(d7);
-  // 301 Rustam (11:30) — mos; 104 John (16:00) — E-mehmonda 2 kishi, PMS'da 1 → kishi soni farq (qizil)
-  emehmonText=`301\tRustam Ergashev\t11:35\n104\tJohn Miller\t16:05\n104\tAziz Karimov\t16:10`;
-  const el=document.getElementById('emText'); if(el)el.value=emehmonText;
-  runEmehmon();
 }
 
 /* ================= SHARED METRICS ================= */
@@ -2597,7 +2868,7 @@ function renderSettings(){
     <div class="panel"><div class="panel-h"><h3>${P("Ma'lumot va zaxira")}</h3><span class="roleonly">Server</span></div>
       <div class="panel-b" style="padding:16px 20px">
         <div class="arr-item"><div class="who"><b>☁️ Server (bulut baza)</b><span>Har o'zgarish <b>serverga</b> saqlanadi. Boshqa kompyuterdan kirsangiz ham, brauzer tozalansa ham — ma'lumot turadi. Bir necha admin bir vaqtda ishlay oladi.</span></div><span class="tag paid">Ulangan</span></div>
-        <div class="arr-item"><div class="who"><b>🔒 Nazorat jurnali serverda</b><span>Sezgir amallar serverga darhol yoziladi — hech kim o'chira olmaydi (admin ham, menejer ham).</span></div><span class="tag paid">Yoqilgan</span></div>
+        ${role==='manager'?`<div class="arr-item"><div class="who"><b>🔒 Nazorat jurnali serverda</b><span>Sezgir amallar serverga darhol yoziladi — hech kim o'chira olmaydi (admin ham, menejer ham).</span></div><span class="tag paid">Yoqilgan</span></div>`:''}
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
           <button class="btn btn-ghost" onclick="exportPageExcel()" style="padding:9px 16px">⤓ Joriy sahifani Excelga</button>
           ${role==='manager'?`<button class="btn btn-ghost" onclick="resetState()" style="padding:9px 16px;color:var(--red-ink);border-color:var(--red)">⚠ Serverni tozalash (hammasi o'chadi)</button>`:''}
@@ -2650,7 +2921,7 @@ function renderSettings(){
         <div class="mini-hint" style="padding:0">Kurs O'zbekiston <b>Markaziy bankidan (cbu.uz)</b> olinadi. "CBU dan yangilash" tugmasi — bugungi rasmiy kursni internetdan tortadi. Internet bo'lmasa, qo'lda kiriting.</div>
       </div></div>
 
-    <div class="panel"><div class="panel-h"><h3>${t('xavfsizlik')}</h3><span class="roleonly">Ma'lumot</span></div>
+    ${role==='manager'?`<div class="panel"><div class="panel-h"><h3>${t('xavfsizlik')}</h3><span class="roleonly">🔒 Faqat menejer</span></div>
       <div class="panel-b" style="padding:6px 4px">
         <div class="arr-item"><div class="who"><b>Menejer MFA (ikki bosqichli kirish)</b><span>Har daqiqada yangilanadigan kod. Admin MFA yo'q, kod faqat menejerga.</span></div><span class="tag paid">Yoqilgan</span></div>
         <div class="arr-item"><div class="who"><b>Sabab so'rash (sezgir amallar)</b><span>Narx, vozvrat, ko'chirish, bekor qilish, korreksiya — sabab majburiy</span></div><span class="tag paid">Yoqilgan</span></div>
@@ -2658,7 +2929,7 @@ function renderSettings(){
         <div class="arr-item"><div class="who"><b>Menejer tiklash huquqi (vastanavit)</b><span>Check-out qilingan bronni faqat menejer tiklaydi; narxni faqat korreksiya qiladi</span></div><span class="tag paid">Yoqilgan</span></div>
         <div class="arr-item"><div class="who"><b>E-mehmon: vaqt farqi + kishi soni</b><span>Vaqt chegarasi menejer belgilaydi; kishi soni farqi ham qizil chiqadi</span></div><span class="tag paid">${emehmonTolerance}′</span></div>
         <div class="arr-item"><div class="who"><b>Telegram bot (egaga bildirishnoma)</b><span>Sezgir amallar + kunlik hisobot real vaqtda</span></div><span class="tag book">Tez orada</span></div>
-      </div></div>
+      </div></div>`:''}
   </div>`;
 }
 
@@ -2683,13 +2954,19 @@ function renderHousekeeping(){
     const list=byRoom[rn].sort((a,b)=>(a.arrTime||'').localeCompare(b.arrTime||''));
     list.forEach((s,i)=>{
       const kishi=1+((s.extra||[]).length);
+      // BARCHA mehmonlar: asosiy + sheriklari (ismlari to'liq ko'rinsin)
+      const allNames=`<div style="font-weight:600">${s.firstName} ${s.lastName}</div>`
+        + (s.extra||[]).map(g=>{
+            const nm=((g.firstName||'')+' '+(g.lastName||'')).trim();
+            return `<div style="color:var(--txt-2);font-size:12.5px;padding-left:12px;border-left:2px solid var(--line);margin-top:3px">↳ ${nm||"<i style='color:var(--red-ink)'>ismi yozilmagan</i>"}</div>`;
+          }).join('');
       const chiqdi=s.status==='out'
         ? `${s.checkoutDate?fmtShort(s.checkoutDate)+' · ':''}${s.checkoutTime||'12:00'}`
         : '<span style="color:var(--green-ink);font-weight:600">hali yashamoqda</span>';
       const holat=s.status==='out'?'<span class="tag out">'+P('Chiqib ketgan')+'</span>':'<span class="tag in">'+P('Yashamoqda')+'</span>';
       rows+=`<tr onclick="openFolio('${s.id}')" style="cursor:pointer">
         <td>${i===0?`<b class="mono" style="font-size:15px">${rn}</b>${list.length>1?` <span class="tag book" style="font-size:10px">${list.length}x</span>`:''}`:''}</td>
-        <td>${s.firstName} ${s.lastName}</td>
+        <td>${allNames}</td>
         <td style="text-align:center"><b>${kishi}</b></td>
         <td>${fmtShort(s.inDate)} · ${s.arrTime||'—'}</td>
         <td>${chiqdi}</td>
@@ -2760,7 +3037,7 @@ function toast(msg,ok){
 const SB_URL='https://bmycnlhryfwjihjxxshp.supabase.co';
 const SB_KEY='sb_publishable_FGaZYRcF0mewLes59vAJeQ_jvWAZxGP';
 const HOTEL_ID='grand_capital';
-let SB=null, cloudReady=false, saveTimer=null, syncTimer=null, lastSavedAt=0, cloudBusy=false;
+let SB=null, cloudReady=false, saveTimer=null, syncTimer=null, lastSavedAt=0, cloudBusy=false, savePending=false;
 
 // Supabase mijozini ishga tushiramiz
 try{
@@ -2825,6 +3102,7 @@ async function cloudLoad(){
     if(d.LANG) LANG=d.LANG;
     if(d.statusColors) statusColors=Object.assign(statusColors,d.statusColors);
     lastSavedAt=d.savedAt||0;
+    lastFingerprint=dataFingerprint();   // yuklangan holatni "o'zgarmagan" deb belgilaymiz
     cloudBadge('☁️ Ma\'lumot yuklandi ✓',true);
     return true;
   }catch(e){
@@ -2856,6 +3134,7 @@ async function cloudSave(){
       pendingBookings, emArchive, emehmonTolerance, usdRate, LANG, statusColors };
     const {error:e2}=await SB.from('settings').upsert({hotel_id:HOTEL_ID,data:conf,updated_at:new Date().toISOString()},{onConflict:'hotel_id'});
     if(e2) throw e2;
+    lastSavedAt=conf.savedAt;   // ⚠️ O'Z saqlashimizni eslab qolamiz — "boshqa xodim" deb o'ylamaslik uchun
     cloudBadge('☁️ Saqlandi ✓',true);
   }catch(e){
     cloudBadge('⚠️ Saqlanmadi: '+(e.message||''),false);
@@ -2869,27 +3148,47 @@ async function cloudLogPush(entry){
   try{ await SB.from('audit_log').insert({hotel_id:HOTEL_ID,entry}); }catch(e){}
 }
 
-/* --- saveState() endi bulutga saqlaydi (kechikish bilan, tez-tez yozmasin) --- */
+/* --- saveState(): faqat MA'LUMOT O'ZGARGANDA bulutga yozadi --- */
+let lastFingerprint='';
+function dataFingerprint(){
+  try{
+    return stays.length+'|'+stays.map(s=>s.id+':'+s.status+':'+s.room+':'+s.price+':'+(s.payments||[]).length+':'+(s.charges||[]).length+':'+s.outDate.getTime()+':'+s.inDate.getTime()).join(',')
+      +'|'+base.getTime()+'|'+rooms.length+'|'+JSON.stringify(typeRates)+'|'+usdRate+'|'+LANG+'|'+hotelCfg.name;
+  }catch(e){ return String(Math.random()); }
+}
 function saveState(){
   if(!SB) return;
+  const fp=dataFingerprint();
+  if(fp===lastFingerprint) return;   // hech narsa o'zgarmagan — serverga tegmaymiz
+  lastFingerprint=fp;
+  savePending=true;
   clearTimeout(saveTimer);
-  saveTimer=setTimeout(()=>{ cloudSave(); },1200);
+  saveTimer=setTimeout(()=>{ savePending=false; cloudSave(); },1200);
 }
 
-/* --- Boshqa admin o'zgartirsa — 15 soniyada bir yangilanadi --- */
+/* --- Boshqa admin o'zgartirsa — 30 soniyada bir tekshiradi (o'zimizniki hisobga olinmaydi) --- */
 function startCloudSync(){
   clearInterval(syncTimer);
   syncTimer=setInterval(async()=>{
-    if(!SB||cloudBusy||document.getElementById('regOverlay')||document.getElementById('folioOverlay')||document.getElementById('actOverlay')) return;
+    // modal ochiq / saqlash kutilmoqda / band bo'lsa — tegmaymiz
+    if(!SB||cloudBusy||savePending||document.getElementById('regOverlay')||document.getElementById('folioOverlay')||document.getElementById('actOverlay')) return;
     try{
       const {data:st}=await SB.from('settings').select('data').eq('hotel_id',HOTEL_ID).maybeSingle();
       const srvAt=(st&&st.data&&st.data.savedAt)||0;
-      if(srvAt>lastSavedAt+500){   // boshqa kimdir yangi o'zgarish qildi
+      if(srvAt>lastSavedAt+2000){   // faqat BOSHQA kimdir o'zgartirgan bo'lsa
+        // sahifa joyini eslab qolamiz — yuqoriga sakramasin
+        const gw=document.querySelector('.gantt-wrap');
+        const gTop=gw?gw.scrollTop:0, gLeft=gw?gw.scrollLeft:0, winY=window.scrollY||0;
         await cloudLoad(); render();
+        setTimeout(()=>{
+          const gw2=document.querySelector('.gantt-wrap');
+          if(gw2){ gw2.scrollTop=gTop; gw2.scrollLeft=gLeft; }
+          window.scrollTo(0,winY);
+        },30);
         toast('Boshqa xodim o\'zgarish kiritdi — yangilandi.',true);
       }
     }catch(e){}
-  },15000);
+  },30000);
 }
 
 function resetState(){
@@ -2906,7 +3205,7 @@ function resetState(){
 }
 
 /* Sahifa yopilganda — saqlab qolamiz */
-window.addEventListener('beforeunload',()=>{ if(SB&&saveTimer){ clearTimeout(saveTimer); cloudSave(); } });
+window.addEventListener('beforeunload',()=>{ if(SB&&savePending){ clearTimeout(saveTimer); savePending=false; cloudSave(); } });
 </script>
 </body>
 </html>
