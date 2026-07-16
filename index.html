@@ -1675,35 +1675,62 @@ function drawActionModal(){
   const titles={pay:'To\'lov qo\'shish',price:'Narxni o\'zgartirish',refund:'↩ Vozvrat (qaytarish)',srefund:'Yashash vozvrati (hisobdan chegirma)',sadd:'Yashash qo\'shish (hisobga qo\'shish)',charge:'Xizmat qo\'shish (mini-bar, kir yuvish...)',cancel:'Bronni bekor qilish',extend:'Muddatni cho\'zish',correct:'Narx korreksiyasi (menejer)',checkout:'Check-out (chiqish)',earlylate:'Erta kirish / Kech chiqish',rebook:'Kelish sanasini o\'zgartirish'};
   let bodyHtml='';
   if(a.kind==='refund'){
-    /* ===== YAGONA VOZVRAT OYNASI — hamma qaytariladigan narsa bir joyda ===== */
+    /* ===== YAGONA VOZVRAT OYNASI — qolgan summa bo'yicha (2 marta bekor qilib bo'lmaydi) ===== */
+    // Har bir to'lov: qancha qaytarilgan? (ref yozuvlari o'sha to'lov usuliga tegishli)
+    const totalRef=(s.payments||[]).filter(p=>p.type==='ref').reduce((x,p)=>x+p.amount,0);
+    const totalPaid=(s.payments||[]).filter(p=>p.type==='pay').reduce((x,p)=>x+p.amount,0);
+    const refundable=Math.max(0,totalPaid-totalRef);   // umumiy qaytarish mumkin bo'lgan pul
+
     const pays=(s.payments||[]).map((p,i)=>({i,p})).filter(x=>x.p.type==='pay');
-    const items=(s.charges||[]).map((c,i)=>({i,c})).filter(x=>x.c.amount>0);   // faqat qo'shilganlar (manfiylar — allaqachon vozvrat)
+
+    // Xizmatlar: har biriga bekor qilingan summani moslab, QOLGANini hisoblaymiz
+    const posCharges=(s.charges||[]).map((c,i)=>({i,c})).filter(x=>x.c.amount>0);
+    const cancels=(s.charges||[]).filter(c=>c.amount<0);
+    // nom bo'yicha bekor qilingan jami summa
+    const canceledByName={};
+    cancels.forEach(c=>{
+      const base=(c.name||'').replace(/ — bekor qilindi$/,'').replace(/ — hisobdan chegirildi$/,'');
+      canceledByName[base]=(canceledByName[base]||0)+Math.abs(c.amount);
+    });
+    const items=posCharges.map(x=>{
+      const already=canceledByName[x.c.name]||0;
+      return {...x, remain:Math.max(0,x.c.amount-already), already};
+    }).filter(x=>x.remain>0);   // to'liq bekor qilinganlar ro'yxatdan chiqadi
+
+    // Yashash qancha chegirilgan?
+    const stayCanceled=(canceledByName['Yashash']||0);
+    const stayRemain=Math.max(0,s.price-stayCanceled);
     const nightsList=nights(s);
 
-    const paySection = pays.length
+    const paySection = refundable>0
       ? pays.map(x=>`<div class="arr-item" style="cursor:pointer;${a.rSel==='pay:'+x.i?'background:var(--brand-bg,#eff4ff);border-color:var(--brand)':''}"
-            onclick="actState.rSel='pay:${x.i}';actState.amount=${x.p.amount};actState.method='${x.p.method}';actState.card='${x.p.card||''}';drawActionModal()">
+            onclick="actState.rSel='pay:${x.i}';actState.amount='';actState.method='${x.p.method}';actState.card='${x.p.card||''}';drawActionModal()">
           <div class="ic pay" style="width:34px;height:34px;border-radius:9px;background:var(--green-bg);color:var(--green-ink);display:flex;align-items:center;justify-content:center;font-weight:700">₸</div>
           <div class="who"><b>${money(x.p.amount)}</b><span>${x.p.method==='karta'?(x.p.card||'Karta'):methodLabel(x.p.method)} · ${x.p.time}</span></div>
           <div class="tm">${a.rSel==='pay:'+x.i?'✓ tanlandi':'Tanlash →'}</div></div>`).join('')
-      : `<div class="mini-hint" style="padding:8px 12px">To'lov yo'q — qaytariladigan pul yo'q.</div>`;
+        + (totalRef>0?`<div class="mini-hint" style="padding:6px 12px;color:var(--txt-3)">Allaqachon qaytarilgan: ${money(totalRef)} · Qolgan qaytarish mumkin: <b>${money(refundable)}</b></div>`:'')
+      : `<div class="mini-hint" style="padding:8px 12px">${totalPaid>0?`Hammasi qaytarilgan (${money(totalPaid)}) — boshqa qaytariladigan pul yo'q.`:"To'lov yo'q — qaytariladigan pul yo'q."}</div>`;
 
-    const chargeSection = (items.length||nightsList)
-      ? (nightsList?`<div class="arr-item" style="cursor:pointer;${a.rSel==='stay'?'background:var(--brand-bg,#eff4ff);border-color:var(--brand)':''}"
+    const stayRow = (nightsList && stayRemain>0)?`<div class="arr-item" style="cursor:pointer;${a.rSel==='stay'?'background:var(--brand-bg,#eff4ff);border-color:var(--brand)':''}"
             onclick="actState.rSel='stay';actState.amount='';drawActionModal()">
           <div class="ic" style="width:34px;height:34px;border-radius:9px;background:var(--amber-bg);color:var(--amber-ink);display:flex;align-items:center;justify-content:center">🛏</div>
-          <div class="who"><b>Yashash — ${money(s.price)}</b><span>${nightsList} tun · hisobdan chegirish</span></div>
-          <div class="tm">${a.rSel==='stay'?'✓ tanlandi':'Tanlash →'}</div></div>`:'')
-        + items.map(x=>`<div class="arr-item" style="cursor:pointer;${a.rSel==='chg:'+x.i?'background:var(--brand-bg,#eff4ff);border-color:var(--brand)':''}"
-            onclick="actState.rSel='chg:${x.i}';actState.amount=${x.c.amount};drawActionModal()">
-          <div class="ic" style="width:34px;height:34px;border-radius:9px;background:var(--panel-2);display:flex;align-items:center;justify-content:center">🧾</div>
-          <div class="who"><b>${x.c.name} — ${money(x.c.amount)}</b><span>${x.c.time||''} · hisobdan olib tashlash</span></div>
-          <div class="tm">${a.rSel==='chg:'+x.i?'✓ tanlandi':'Tanlash →'}</div></div>`).join('')
-      : `<div class="mini-hint" style="padding:8px 12px">Qo'shilgan xizmat yo'q.</div>`;
+          <div class="who"><b>Yashash — ${money(stayRemain)}</b><span>${nightsList} tun · hisobdan chegirish${stayCanceled>0?` · (${money(stayCanceled)} allaqachon chegirilgan)`:''}</span></div>
+          <div class="tm">${a.rSel==='stay'?'✓ tanlandi':'Tanlash →'}</div></div>`:'';
 
+    const chargeSection = (items.length||stayRow)
+      ? stayRow + items.map(x=>`<div class="arr-item" style="cursor:pointer;${a.rSel==='chg:'+x.i?'background:var(--brand-bg,#eff4ff);border-color:var(--brand)':''}"
+            onclick="actState.rSel='chg:${x.i}';actState.amount='';drawActionModal()">
+          <div class="ic" style="width:34px;height:34px;border-radius:9px;background:var(--panel-2);display:flex;align-items:center;justify-content:center">🧾</div>
+          <div class="who"><b>${x.c.name} — ${money(x.remain)}</b><span>${x.c.time||''} · hisobdan olib tashlash${x.already>0?` · (${money(x.already)} allaqachon)`:''}</span></div>
+          <div class="tm">${a.rSel==='chg:'+x.i?'✓ tanlandi':'Tanlash →'}</div></div>`).join('')
+      : `<div class="mini-hint" style="padding:8px 12px">Bekor qilinadigan xizmat yo'q (hammasi allaqachon bekor qilingan yoki xizmat qo'shilmagan).</div>`;
+
+    // tanlangan element uchun MAX (qolgan) summa
+    let maxAmt=0;
+    if((a.rSel||'').startsWith('pay:')) maxAmt=refundable;
+    else if(a.rSel==='stay') maxAmt=stayRemain;
+    else if((a.rSel||'').startsWith('chg:')){ const it=items.find(x=>'chg:'+x.i===a.rSel); maxAmt=it?it.remain:0; }
     const isPay = (a.rSel||'').startsWith('pay:');
-    const maxAmt = isPay ? (pays.find(x=>'pay:'+x.i===a.rSel)||{p:{amount:0}}).p.amount
-                 : (a.rSel==='stay' ? s.price : ((s.charges||[])[+(a.rSel||'').split(':')[1]]||{amount:0}).amount);
 
     bodyHtml=`
       <div style="background:var(--green-bg);border:1px solid var(--green);border-radius:10px;padding:10px 12px;margin-bottom:8px">
@@ -1851,31 +1878,38 @@ function commitAction(){
     if(!amt||amt<=0){ toast('Summani kiriting.',false); return; }
 
     if(a.rSel.startsWith('pay:')){
-      /* 1) PUL QAYTARISH — kassadan chiqadi */
-      const idx=+a.rSel.split(':')[1];
-      const p=(s.payments||[])[idx];
-      if(!p||p.type!=='pay'){ toast('To\'lov topilmadi.',false); return; }
-      if(amt>p.amount){ toast(`Bu to'lovdan ko'p qaytarib bo'lmaydi (${money(p.amount)}).`,false); return; }
-      const paid=paidSum(s);
-      if(amt>paid){ toast(`Jami to'langandan ko'p qaytarib bo'lmaydi (${money(paid)}).`,false); return; }
+      /* 1) PUL QAYTARISH — kassadan chiqadi (qolgan qaytarish mumkin bo'lган summадан oshmasin) */
+      const totalRef=(s.payments||[]).filter(p=>p.type==='ref').reduce((x,p)=>x+p.amount,0);
+      const totalPaid=(s.payments||[]).filter(p=>p.type==='pay').reduce((x,p)=>x+p.amount,0);
+      const refundable=Math.max(0,totalPaid-totalRef);
+      if(refundable<=0){ toast('Qaytariladigan pul qolmagan — hammasi allaqachon qaytarilgan.',false); return; }
+      if(amt>refundable){ toast(`Ko'pi bilan ${money(refundable)} qaytarish mumkin (qolgan summa).`,false); return; }
+      const p=(s.payments||[]).filter(x=>x.type==='pay')[0]||{method:'naxt'};
       s.payments.push({amount:amt,method:a.method||p.method,card:(a.method||p.method)==='karta'?(a.card||p.card||''):'',type:'ref',time:stamp,ts:new Date(base),by:role==='admin'?'Admin':'Menejer'});
       logAction(s,'refund',`PUL QAYTARILDI (kassadan): ${money(amt)} · ${(a.method||p.method)==='karta'?(a.card||p.card||'Karta'):methodLabel(a.method||p.method)}`,amt,a.reason);
       toast('Pul qaytarildi — kassadan chiqdi. Nazoratga yozildi ✓',true);
 
     } else if(a.rSel==='stay'){
-      /* 2a) YASHASHNI hisobdan chegirish — kassaga tegmaydi */
-      if(amt>s.price){ toast(`Yashash narxidan ko'p chegirib bo'lmaydi (${money(s.price)}).`,false); return; }
+      /* 2a) YASHASHNI hisobdan chegirish — kassaga tegmaydi (qolgan qismдан oshmasин) */
+      const stayCanceled=(s.charges||[]).filter(c=>c.amount<0 && /Yashash/.test(c.name)).reduce((x,c)=>x+Math.abs(c.amount),0);
+      const stayRemain=Math.max(0,s.price-stayCanceled);
+      if(stayRemain<=0){ toast('Yashash allaqachon to\'liq chegirilgan.',false); return; }
+      if(amt>stayRemain){ toast(`Ko'pi bilan ${money(stayRemain)} chegirish mumkin (qolgan).`,false); return; }
       s.charges=s.charges||[];
       s.charges.push({name:'Yashash — hisobdan chegirildi',amount:-Math.abs(amt),premicha:a.premicha,time:stamp,by:role==='admin'?'Admin':'Menejer'});
       logAction(s,'refund',`HISOBDAN CHEGIRILDI (yashash): ${money(amt)} — pul harakati yo'q, qarz kamaydi`,0,a.reason);
       toast('Hisobdan chegirildi — kassaga tegmadi. Nazoratga yozildi ✓',true);
 
     } else if(a.rSel.startsWith('chg:')){
-      /* 2b) XIZMATNI hisobdan olib tashlash — kassaga tegmaydi */
+      /* 2b) XIZMATNI hisobdan olib tashlash — kassaga tegmaydi (QOLGAN qismдан oshmasин!) */
       const idx=+a.rSel.split(':')[1];
       const c=(s.charges||[])[idx];
-      if(!c){ toast('Xizmat topilmadi.',false); return; }
-      if(amt>c.amount){ toast(`Bu xizmatdan ko'p olib tashlab bo'lmaydi (${money(c.amount)}).`,false); return; }
+      if(!c||c.amount<=0){ toast('Xizmat topilmadi.',false); return; }
+      // bu xizmat allaqachon qancha bekor qilingan?
+      const already=(s.charges||[]).filter(x=>x.amount<0 && (x.name===c.name+' — bekor qilindi')).reduce((sum,x)=>sum+Math.abs(x.amount),0);
+      const remain=Math.max(0,c.amount-already);
+      if(remain<=0){ toast(`"${c.name}" allaqachon to'liq bekor qilingan.`,false); return; }
+      if(amt>remain){ toast(`Ko'pi bilan ${money(remain)} olib tashlash mumkin (qolgan).`,false); return; }
       s.charges.push({name:`${c.name} — bekor qilindi`,amount:-Math.abs(amt),premicha:a.premicha,time:stamp,by:role==='admin'?'Admin':'Menejer'});
       logAction(s,'refund',`HISOBDAN OLIB TASHLANDI: ${c.name} — ${money(amt)} — pul harakati yo'q`,0,a.reason);
       toast('Hisobdan olib tashlandi — kassaga tegmadi. Nazoratga yozildi ✓',true);
@@ -2298,36 +2332,54 @@ function renderFnb(){
 }
 
 /* ================= NAZORAT (manager only) ================= */
-let nazDate='';
+let nazDate='';   // bo'sh = HAMMASI (barcha kunlar)
 function setNazDate(v){ nazDate=v; render(); }
+function nazAll(){ nazDate=''; render(); }
 function renderNazorat(){
-  const sel=nazDate||ymd(base);
+  const showAll = !nazDate;
+  // barcha mavjud kunlar (yangi -> eski)
   const days=[...new Set(auditLog.map(a=>a.day||ymd(base)))].sort().reverse();
-  if(!days.includes(sel)) days.unshift(sel);
-  const dayLog=auditLog.filter(a=>(a.day||ymd(base))===sel);
-  const dateBar=`<div class="panel" style="margin-bottom:14px"><div style="display:flex;align-items:center;gap:12px;padding:12px 16px;flex-wrap:wrap">
+
+  // ko'rsatiladigan yozuvlar: HAMMASI yoki tanlangan kun
+  const shownLog = showAll ? auditLog.slice() : auditLog.filter(a=>(a.day||ymd(base))===nazDate);
+  // auditLog unshift bilan yig'iladi -> [0] eng yangi. YANGI TEPADA bo'lishi uchun shundayligicha qoldiramiz.
+
+  const dateBar=`<div class="panel" style="margin-bottom:14px"><div style="display:flex;align-items:center;gap:10px;padding:12px 16px;flex-wrap:wrap">
+    <button class="btn ${showAll?'btn-primary':'btn-ghost'}" style="padding:8px 16px;font-size:13px" onclick="nazAll()">📋 Hammasi</button>
+    <span style="color:var(--txt-3)">yoki</span>
     <span style="font-weight:600;font-size:13px">📅 Kun tanlang:</span>
-    <input type="date" value="${sel}" onchange="setNazDate(this.value)" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px">
-    <div class="seg" style="flex-wrap:wrap">${days.slice(0,7).map(d=>{const p=d.split('-');return `<button class="${d===sel?'on':''}" onclick="setNazDate('${d}')">${p[2]}.${p[1]}</button>`;}).join('')}</div>
-    <span style="margin-left:auto;font-size:11px;color:var(--txt-3)">🔒 Yozuvlarni hech kim o'chira olmaydi</span>
+    <input type="date" value="${nazDate||ymd(base)}" onchange="setNazDate(this.value)" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px">
+    ${days.length?`<div class="seg" style="flex-wrap:wrap">${days.slice(0,8).map(d=>{const p=d.split('-');return `<button class="${d===nazDate?'on':''}" onclick="setNazDate('${d}')">${p[2]}.${p[1]}</button>`;}).join('')}</div>`:''}
+    <span style="margin-left:auto;font-size:11px;color:var(--txt-3)">🔒 Hech kim o'chira olmaydi</span>
   </div></div>`;
 
-  if(!dayLog.length){
+  if(!shownLog.length){
     return `<div class="hint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
-      Bu yerda administrator va menejer qilgan har bir o'zgarish sana bo'yicha yoziladi — o'chirib bo'lmaydi. Har kuni yangi kun ochiladi, eski kunlarni sana tanlab ko'rasiz.</div>
+      Bu yerda administrator va menejer qilgan har bir o'zgarish — <b>sana va soati bilan</b>, eng yangisi tepada, ketma-ket yoziladi. O'chirib bo'lmaydi.</div>
     ${dateBar}
     <div class="panel"><div class="empty-state">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V6z"/></svg>
-      ${fmt(new Date(sel.split('-')[0],+sel.split('-')[1]-1,+sel.split('-')[2]))} kuni o'zgarish yo'q.
+      ${showAll?'Hali hech qanday amal yozilmagan.':fmt(new Date(nazDate.split('-')[0],+nazDate.split('-')[1]-1,+nazDate.split('-')[2]))+' kuni o\'zgarish yo\'q.'}
     </div></div>`;
   }
-  const kindLabel={money:'To\'lov / to\'lov',warn:'Narx o\'zgardi',correct:'Narx korreksiyasi',refund:'Vozvrat',move:'Ko\'chirish / muddat',edit:'Ma\'lumot tahriri',out:'Check-out'};
-  const rows=dayLog.slice().reverse().map(a=>{
+
+  // qatorlar — har birida TO'LIQ sana + soat (a.time allaqachon "soat · kun" ko'rinishida)
+  let rows='', lastDay='';
+  shownLog.forEach(a=>{
+    const aday=a.day||ymd(base);
+    // HAMMASI rejimida — har yangi kun boshida ajratuvchi sarlavha
+    if(showAll && aday!==lastDay){
+      lastDay=aday;
+      const p=aday.split('-');
+      const dObj=new Date(+p[0],+p[1]-1,+p[2]);
+      const cnt=auditLog.filter(x=>(x.day||ymd(base))===aday).length;
+      rows+=`<tr style="background:var(--panel-2)"><td colspan="7" style="padding:9px 12px;font-weight:700;color:var(--brand-ink);font-size:12.5px">📅 ${fmt(dObj)} · ${wdName(dObj.getDay())} <span style="color:var(--txt-3);font-weight:500">— ${cnt} ta amal</span></td></tr>`;
+    }
     const twoDate=(a.stayDate && a.actDate && a.stayDate!==a.actDate)
       ? `<br><span style="font-size:11px;color:var(--amber-ink)">Yashagan: ${a.stayDate} · tuzatildi: ${a.actDate}</span>` : '';
-    const amt=a.amount?`<b class="${a.amount>0?'':''}">${a.amount>0?'+':''}${money(a.amount)}</b>`:'—';
-    return `<tr>
-      <td style="white-space:nowrap">${a.time}</td>
+    const amt=a.amount?`<b>${a.amount>0?'+':''}${money(a.amount)}</b>`:'—';
+    rows+=`<tr>
+      <td style="white-space:nowrap;font-family:'JetBrains Mono';font-size:12px">${a.time}</td>
       <td><b class="mono">${a.room}</b></td>
       <td>${a.guest}</td>
       <td>${a.text}${twoDate}</td>
@@ -2335,13 +2387,16 @@ function renderNazorat(){
       <td>${a.reason?'💬 '+a.reason:'—'}</td>
       <td style="white-space:nowrap">${a.by}</td>
     </tr>`;
-  }).join('');
-  const suspicious=dayLog.filter(a=>a.type==='warn'||a.type==='refund'||a.type==='correct').length;
-  const selD=new Date(sel.split('-')[0],+sel.split('-')[1]-1,+sel.split('-')[2]);
+  });
+
+  const suspicious=shownLog.filter(a=>a.type==='warn'||a.type==='refund'||a.type==='correct').length;
+  const title = showAll ? `Amallar jurnali — HAMMASI (${shownLog.length} ta)` : `Amallar jurnali — ${fmt(new Date(nazDate.split('-')[0],+nazDate.split('-')[1]-1,+nazDate.split('-')[2]))}`;
   return `<div class="hint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-    Har bir sezgir amal — vaqti · sababi · nima bo'lgani · qaysi xona. Tanlangan kunda <b>${suspicious}</b> ta e'tibor talab qiladigan yozuv. Eski kun xonasi tuzatilsa — yashagan sana ham, tuzatilgan (bugungi) sana ham ko'rinadi.</div>
+    Har bir sezgir amal — vaqti · sababi · nima bo'lgani · qaysi xona. ${showAll?'Barcha kunlar':'Tanlangan kun'} bo'yicha <b>${suspicious}</b> ta e'tibor talab qiladigan yozuv.</div>
     ${dateBar}
-    <div class="panel"><div class="panel-h"><h3>Amallar jurnali — ${fmt(selD)}</h3><span class="spacer"></span><span class="roleonly">${role==='owner'?'Owner ko\'radi':'Faqat menejer'}</span></div>
+    <div class="panel"><div class="panel-h"><h3>${title}</h3><span class="spacer"></span>
+      <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px" onclick="exportPageExcel()">⤓ Excel</button>
+      <span class="roleonly">${role==='owner'?'Owner ko\'radi':'Faqat menejer'}</span></div>
       <table class="data"><thead><tr><th>${P("Vaqt")}</th><th>${P("Xona")}</th><th>${P("Mehmon")}</th><th>${P("Nima qilindi")}</th><th>${P("Summa")}</th><th>${P("Sabab")}</th><th>${P("Kim")}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
