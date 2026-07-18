@@ -1148,7 +1148,8 @@ function wireGantt(){
     el.onmouseenter=e=>showTip(e,el.dataset.id);
     el.onmousemove=e=>moveTip(e);
     el.onmouseleave=hideTip;
-    if(role!=='owner'){
+    const _ds=stays.find(x=>x.id===el.dataset.id);
+    if(role!=='owner' && can('moveRoom',_ds)){
       el.setAttribute('draggable','true');
       el.addEventListener('dragstart',e=>{ dragStayId=el.dataset.id; el.style.opacity='.45'; hideTip(); });
       el.addEventListener('dragend',e=>{ el.style.opacity=''; document.querySelectorAll('.g-track.drop-hover').forEach(t=>t.classList.remove('drop-hover')); });
@@ -1166,6 +1167,7 @@ let dragStayId=null;
 function dropMoveRoom(id,room){
   const s=stays.find(x=>x.id===id); if(!s||!room||s.room===room)return;
   if(role==='owner')return;
+  if(!can('moveRoom',s)){ toast('Bu bron joriy kunga tegishli emas — xonani faqat menejer ko\'chiradi.',false); render(); return; }
   const clash=stays.some(x=>x.id!==id && x.room===room && x.status!=='canceled' && stripTime(x.inDate)<stripTime(s.outDate) && stripTime(x.outDate)>stripTime(s.inDate));
   if(clash){ toast(room+'-xona bu sanalarda band.',false); return; }
   const old=s.room; s.room=room;
@@ -1405,7 +1407,8 @@ function closeReg(){const o=document.getElementById('regOverlay');if(o)o.remove(
 function saveReg(status){
   const r=regState, g=r.guests[0];
   if(!g.firstName||!g.lastName){toast('Asosiy mehmon ism-familiyasini kiriting.',false);return;}
-  if(!r.nightly){toast('1 kunlik xona narxini kiriting.',false);return;}
+  if(r.nightly===''||r.nightly===null||r.nightly===undefined||isNaN(+r.nightly)){toast('1 kunlik xona narxini kiriting (bepul bo\'lsa 0 yozing).',false);return;}
+  if(+r.nightly<0){toast('Narx manfiy bo\'lishi mumkin emas.',false);return;}
   const stamp=fmtShort(base)+' '+r.arrTime;
   const created=[];
   const roomCount=r.rooms.length;
@@ -1459,15 +1462,25 @@ function openFolio(id,keepEdit){
   } else if(s.status==='book'){
     if(canCheckin) actBtns+=gbtn('doCheckin','✓ Check-in qilish','primary');
     actBtns+=gGroup('₸','To\'lov',[['addFolioPay','To\'lov qo\'shish']]);
-    actBtns+=gGroup('↔','Xona / sana',[['doRebook','📅 Kelish sanasini o\'zgartirish'],['doExtend','📅 Muddatni cho\'zish'],['doMoveRoom','↔ Xona ko\'chirish'],['doMovePrice','💰 Narxni o\'zgartirish']]);
+    const bItems=[];
+    if(can('rebook',s))   bItems.push(['doRebook','📅 Kelish sanasini o\'zgartirish']);
+    if(can('extend',s))   bItems.push(['doExtend','📅 Muddatni cho\'zish']);
+    if(can('moveRoom',s)) bItems.push(['doMoveRoom','↔ Xona ko\'chirish']);
+    if(can('price',s))    bItems.push(['doMovePrice','💰 Narxni o\'zgartirish']);
+    if(bItems.length) actBtns+=gGroup('↔','Xona / sana',bItems);
     actBtns+=gbtn('openInvoice','🧾 '+t('invoice'))+gbtn('doCancel','✕ Bekor qilish','danger');
   } else if(s.status==='in'){
     actBtns+=gbtn('doCheckout','🚪 Check-out','primary');
-    actBtns+=gGroup('₸','To\'lov / vozvrat',[['addFolioPay','₸ To\'lov qo\'shish'],['doRefund','↩ VOZVRAT (qaytarish)']]);
+    actBtns+=gGroup('₸','To\'lov / vozvrat',[['addFolioPay','₸ To\'lov qo\'shish'],
+      ['doRefund', can('cashRefund',s)?'↩ VOZVRAT (qaytarish)':'↩ Hisobdan olib tashlash']]);
     actBtns+=gGroup('🛏','Hisobga qo\'shish',[['doCharge','🧾 Xizmat qo\'shish (mini-bar, kir yuvish...)'],['doServiceAdd','➕ Yashash qo\'shish'],['doEarlyLate','🕐 Erta kirish / Kech chiqish']]);
-    actBtns+=gGroup('↔','Xona',[['doMoveRoom','↔ Xona ko\'chirish'],['doExtend','📅 Muddatni cho\'zish'],['doMovePrice','💰 Narxni o\'zgartirish']]);
+    const rItems=[];
+    if(can('moveRoom',s)) rItems.push(['doMoveRoom','↔ Xona ko\'chirish']);
+    if(can('extend',s))   rItems.push(['doExtend','📅 Muddatni cho\'zish']);
+    if(can('price',s))    rItems.push(['doMovePrice','💰 Narxni o\'zgartirish']);
+    if(rItems.length) actBtns+=gGroup('↔','Xona',rItems);
     actBtns+=gbtn('openInvoice','🧾 '+t('invoice'))+gbtn('doCancel','✕ Bekor qilish','danger');
-  } else { // out
+  } else { // out (check-out qilingan)
     if(role==='manager'){
       actBtns+=gbtn('doRestore','♻ Qayta tiklash (vastanavit)','primary');
       actBtns+=gGroup('₸','To\'lov / vozvrat',[['addFolioPay','₸ To\'lov qo\'shish'],['doRefund','↩ VOZVRAT (qaytarish)']]);
@@ -1475,6 +1488,8 @@ function openFolio(id,keepEdit){
       actBtns+=gGroup('↔','Xona',[['doMoveRoom','↔ Xona ko\'chirish'],['doExtend','📅 Muddatni cho\'zish'],['doPriceCorrect','💰 Narx korreksiyasi']]);
       actBtns+=gbtn('openInvoice','🧾 '+t('invoice'));
     } else {
+      // ADMIN: chiqib ketgan mehmonning QARZINI yopa oladi
+      if(balance(s)>0) actBtns+=gbtn('addFolioPay','₸ Qarzni to\'lash ('+money(balance(s))+')','primary');
       actBtns+=gbtn('openInvoice','🧾 '+t('invoice'));
     }
   }
@@ -1621,8 +1636,43 @@ function doCheckin(id){
   const s=stays.find(x=>x.id===id); s.status='in';
   closeFolio(); render(); toast('Check-in bajarildi ✓',true);
 }
+/* ================= ADMIN HUQUQLARI (markaziy nazorat) =================
+   Admin qila oladi: to'lov qabul, xizmat qo'shish, to'lanmagan xizmatni bekor,
+                     xona ko'chirish (FAQAT joriy kun), muddat UZAYTIRISH, check-out'dan keyin to'lov
+   Faqat menejer:    narx o'zgartirish, PUL QAYTARISH (kassadan), kelish sanasi, vastanavit, muddat qisqartirish
+   Hech kim:         o'tgan kun sana/vaqtini o'zgartirish
+====================================================================== */
+function stayIsToday(s){
+  if(!s) return false;
+  const t=stripTime(base).getTime();
+  const a=stripTime(s.inDate).getTime();
+  const b=stripTime(s.checkoutDate||s.outDate).getTime();
+  return t>=a && t<=b;      // bugun kelgan / yashayotgan / bugun chiqqan
+}
+function can(action,s){
+  if(role==='manager') return true;
+  if(role!=='admin') return false;
+  switch(action){
+    case 'pay':          return true;              // to'lov qabul qilish (pul kiradi)
+    case 'charge':       return true;              // xizmat qo'shish
+    case 'chargeCancel': return true;              // to'lanmagan xizmatni bekor qilish
+    case 'moveRoom':     return stayIsToday(s);    // xona — FAQAT joriy kun
+    case 'extend':       return stayIsToday(s);    // muddat — faqat joriy kun, faqat uzaytirish
+    case 'price':        return false;             // ⛔ narx — menejer
+    case 'cashRefund':   return false;             // ⛔ kassadan pul qaytarish — menejer
+    case 'rebook':       return false;             // ⛔ kelish sanasi — menejer
+    case 'restore':      return false;             // ⛔ vastanavit — menejer
+    default:             return false;
+  }
+}
+function denyMgr(what){ toast(`${what} — buni faqat menejer bajaradi.`,false); }
+
 function addFolioPay(id){ openActionModal(id,'pay'); }
-function doMovePrice(id){ openActionModal(id,'price'); }
+function doMovePrice(id){
+  const s=stays.find(x=>x.id===id);
+  if(!can('price',s)){ denyMgr('Narx o\'zgartirish'); return; }
+  openActionModal(id,'price');
+}
 function closeFolioGroups(){ document.querySelectorAll('details.folio-group[open]').forEach(d=>d.removeAttribute('open')); }
 function fBirth(i,el){
   let d=(el.value||'').replace(/\D/g,'').slice(0,8);
@@ -1631,15 +1681,26 @@ function fBirth(i,el){
   else if(d.length>2) out=d.slice(0,2)+'.'+d.slice(2);
   el.value=out; folioEdit.guests[i].birth=out;
 }
-function doRefund(id){ openActionModal(id,'refund'); }
+function doRefund(id){ openActionModal(id,'refund'); }   // admin uchun faqat "hisobdan olib tashlash" bo'limi ochiladi
 function doServiceRefund(id){ openActionModal(id,'srefund'); }
 function doServiceAdd(id){ openActionModal(id,'sadd'); }
 function doCharge(id){ openActionModal(id,'charge'); }
 function doEarlyLate(id){ openActionModal(id,'earlylate'); }
 function doCancel(id){ openActionModal(id,'cancel'); }
-function doExtend(id){ openActionModal(id,'extend'); }
-function doRebook(id){ openActionModal(id,'rebook'); }
-function doPriceCorrect(id){ openActionModal(id,'correct'); }
+function doExtend(id){
+  const s=stays.find(x=>x.id===id);
+  if(!can('extend',s)){ toast('Bu bron joriy kunga tegishli emas — muddatni faqat menejer o\'zgartiradi.',false); return; }
+  openActionModal(id,'extend');
+}
+function doRebook(id){
+  const s=stays.find(x=>x.id===id);
+  if(!can('rebook',s)){ denyMgr('Kelish sanasini o\'zgartirish'); return; }
+  openActionModal(id,'rebook');
+}
+function doPriceCorrect(id){
+  if(role!=='manager'){ denyMgr('Narx korreksiyasi'); return; }
+  openActionModal(id,'correct');
+}
 function doRestore(id){
   if(role!=='manager'){toast('Faqat menejer tiklay oladi.',false);return;}
   const s=stays.find(x=>x.id===id); if(!s)return;
@@ -1733,6 +1794,7 @@ function drawActionModal(){
     const isPay = (a.rSel||'').startsWith('pay:');
 
     bodyHtml=`
+      ${can('cashRefund',s)?`
       <div style="background:var(--green-bg);border:1px solid var(--green);border-radius:10px;padding:10px 12px;margin-bottom:8px">
         <div style="font-weight:700;font-size:13px;color:var(--green-ink);margin-bottom:2px">1️⃣ PUL QAYTARISH — kassadan pul chiqadi</div>
         <div style="font-size:11.5px;color:var(--txt-2)">Mehmon bergan pulni qaytarasiz. Kassa hisobotiga tushadi.</div>
@@ -1741,7 +1803,13 @@ function drawActionModal(){
       <div style="background:var(--amber-bg);border:1px solid var(--amber);border-radius:10px;padding:10px 12px;margin:14px 0 8px">
         <div style="font-weight:700;font-size:13px;color:var(--amber-ink);margin-bottom:2px">2️⃣ HISOBDAN OLIB TASHLASH — kassaga tegmaydi</div>
         <div style="font-size:11.5px;color:var(--txt-2)">Xato qo'shilgan xizmat/yashashni bekor qilasiz. Pul harakati YO'Q — faqat qarz kamayadi.</div>
+      </div>`
+      :`
+      <div style="background:var(--amber-bg);border:1px solid var(--amber);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+        <div style="font-weight:700;font-size:13px;color:var(--amber-ink);margin-bottom:2px">HISOBDAN OLIB TASHLASH — kassaga tegmaydi</div>
+        <div style="font-size:11.5px;color:var(--txt-2)">Xato qo'shilgan xizmat/yashashni bekor qilasiz. Pul harakati YO'Q — faqat qarz kamayadi.</div>
       </div>
+      <div class="mini-hint" style="padding:0 0 8px;color:var(--txt-3)">💵 Kassadan <b>pul qaytarish</b> — buni faqat menejer bajaradi.</div>`}
       ${chargeSection}
       ${a.rSel?`
         <div class="field" style="margin-top:14px"><label>Qaytariladigan summa (so'm)${maxAmt?` — ko'pi bilan ${money(maxAmt)}`:''}</label>
@@ -1864,6 +1932,17 @@ function closeAction(){document.getElementById('actOverlay')?.remove();actState=
 function commitAction(){
   const a=actState, s=stays.find(x=>x.id===a.id);
   const stamp=fmtShort(base)+' '+uzTime();
+  /* ⚠️ HUQUQ NAZORATI — tugma yashirin bo'lsa ham, bu yerdan o'tolmaydi */
+  if(a.kind==='price'   && !can('price',s)){    denyMgr('Narx o\'zgartirish'); return; }
+  if(a.kind==='correct' && role!=='manager'){   denyMgr('Narx korreksiyasi'); return; }
+  if(a.kind==='rebook'  && !can('rebook',s)){   denyMgr('Kelish sanasini o\'zgartirish'); return; }
+  if(a.kind==='extend'  && !can('extend',s)){   toast('Bu bron joriy kunga tegishli emas.',false); return; }
+  if(a.kind==='refund'  && (a.rSel||'').startsWith('pay:') && !can('cashRefund',s)){
+    denyMgr('Kassadan pul qaytarish'); return; }
+  if(a.kind==='extend' && role==='admin'){
+    const nn=+a.newNights||0;
+    if(nn<nights(s)){ toast('Muddatni QISQARTIRISH — buni faqat menejer bajaradi. Siz faqat uzaytira olasiz.',false); return; }
+  }
   if(NEEDS_REASON.includes(a.kind) && !a.reason.trim()){ toast('Sababni yozing (majburiy).',false); return; }
   const R=a.reason?` · Sabab: ${a.reason}`:'';
   if(a.kind==='pay'){
@@ -1927,7 +2006,9 @@ function commitAction(){
     logAction(s,'edit',`Yashash hisobga qo'shildi: +${money(amt)}`,amt,a.reason);
     toast('Yashash hisobga qo\'shildi — qarz oshdi ✓',true);
   } else if(a.kind==='price'){
-    const np=+a.price; if(!np){closeAction();return;}
+    const np=+a.price;
+    if(a.price===''||a.price===null||isNaN(np)){closeAction();return;}
+    if(np<0){toast('Narx manfiy bo\'lishi mumkin emas.',false);return;}
     const oldN=s.nightly||Math.round(s.price/nights(s)); const n=nights(s); let changed=0;
     // auditgacha o'zgartiriladi: bugungi kun (base) va undan keyingi tunlar. O'tgan (audit qilingan) kunlar qotadi.
     for(let i=0;i<n;i++){ if(nightDate(s,i).getTime()>=base.getTime()){ s.rates[i]=np; changed++; } }
@@ -1974,7 +2055,9 @@ function commitAction(){
     logAction(s,'move',`Kelish sanasi ko'chirildi: ${old} → ${fmt(nd)} (mehmon kelmagan)`,0);
     toast(`Bron ${fmt(nd)} ga ko'chirildi ✓`,true);
   } else if(a.kind==='correct'){
-    const np=+a.price; if(!np){closeAction();return;}
+    const np=+a.price;
+    if(a.price===''||a.price===null||isNaN(np)){closeAction();return;}
+    if(np<0){toast('Narx manfiy bo\'lishi mumkin emas.',false);return;}
     const oldTot=s.price; s.nightly=np; s.rates=s.rates.map(()=>np); recalc(s);
     logAction(s,'warn',`NARX KORREKSIYASI: ${money(oldTot)} → ${money(s.price)} (barcha kunlar)`,0,a.reason);
     toast('Narx korreksiya qilindi — menejerga yozildi ✓',true);
@@ -2033,6 +2116,7 @@ function commitCheckout(id,tm){
 /* Xona ko'chirish — faqat o'sha sanalarda bo'sh xonalar ko'rsatiladi (E-mehmon uslubida) */
 function doMoveRoom(id){
   const s=stays.find(x=>x.id===id);
+  if(!can('moveRoom',s)){ toast('Bu bron joriy kunga tegishli emas — xonani faqat menejer ko\'chiradi.',false); return; }
   const free=rooms.filter(r=>r.n!==s.room && !stays.some(x=>x.id!==id && x.status!=='out' && x.room===r.n
       && stripTime(x.inDate)<stripTime(s.outDate) && stripTime(x.outDate)>stripTime(s.inDate)));
   if(!free.length){ toast("Bu sanalarda bo'sh xona yo'q.",false); return; }
@@ -2378,14 +2462,20 @@ function renderNazorat(){
     const twoDate=(a.stayDate && a.actDate && a.stayDate!==a.actDate)
       ? `<br><span style="font-size:11px;color:var(--amber-ink)">Yashagan: ${a.stayDate} · tuzatildi: ${a.actDate}</span>` : '';
     const amt=a.amount?`<b>${a.amount>0?'+':''}${money(a.amount)}</b>`:'—';
-    rows+=`<tr>
+    // ⚠️ ADMIN qilgan amallar QIZIL — ko'zga tashlansin
+    const isAdm=/admin/i.test(a.by||'');
+    const rowStyle=isAdm?' style="border-left:3px solid var(--red)"':'';
+    const byCell=isAdm
+      ? `<b style="color:var(--red-ink)">${a.by}</b>`
+      : a.by;
+    rows+=`<tr${rowStyle}>
       <td style="white-space:nowrap;font-family:'JetBrains Mono';font-size:12px">${a.time}</td>
       <td><b class="mono">${a.room}</b></td>
       <td>${a.guest}</td>
-      <td>${a.text}${twoDate}</td>
-      <td class="money">${amt}</td>
+      <td${isAdm?' style="color:var(--red-ink)"':''}>${a.text}${twoDate}</td>
+      <td class="money"${isAdm?' style="color:var(--red-ink)"':''}>${amt}</td>
       <td>${a.reason?'💬 '+a.reason:'—'}</td>
-      <td style="white-space:nowrap">${a.by}</td>
+      <td style="white-space:nowrap">${byCell}</td>
     </tr>`;
   });
 
@@ -3156,27 +3246,64 @@ function renderHousekeeping(){
 /* ================= NIGHT AUDIT ================= */
 function renderAudit(){
   const staying=stays.filter(s=>s.status==='in' && stripTime(s.outDate)>base);
-  const leaving=stays.filter(s=>s.status==='in' && stripTime(s.outDate).getTime()===base.getTime());
-  const list=leaving.map(s=>`<div class="audit-item"><div class="dot warn"></div><div class="body"><b>Xona ${s.room} · ${s.firstName} ${s.lastName}</b><p>Bugun chiqishi kerak — check-out qilinmagan</p></div><div class="meta"><button class="btn btn-ghost" style="padding:6px 10px;font-size:12px" onclick="doCheckout('${s.id}');go('audit')">Check-out</button></div></div>`).join('');
+  // ⛔ HAL QILINISHI KERAK: chiqish sanasi bugun yoki O'TGAN, lekin hali check-out qilinmagan
+  const leaving=stays.filter(s=>s.status==='in' && stripTime(s.outDate).getTime()<=base.getTime())
+                     .sort((a,b)=>a.room.localeCompare(b.room,undefined,{numeric:true}));
+  // kelishi kerak edi, lekin check-in qilinmagan bronlar (ogohlantirish — bloklamaydi)
+  const noShow=stays.filter(s=>s.status==='book' && stripTime(s.inDate).getTime()<=base.getTime());
+
+  const list=leaving.map(s=>{
+    const kech=Math.round((base.getTime()-stripTime(s.outDate).getTime())/DAY);
+    const qarz=balance(s);
+    return `<div class="audit-item"><div class="dot warn"></div>
+      <div class="body"><b>Xona ${s.room} · ${s.firstName} ${s.lastName}</b>
+        <p>Chiqishi kerak edi: <b>${fmt(s.outDate)}</b>${kech>0?` — <b style="color:var(--red-ink)">${kech} kun kechikkan</b>`:' (bugun)'}${qarz>0?` · qarz: <b style="color:var(--red-ink)">${money(qarz)}</b>`:''}</p></div>
+      <div class="meta" style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-ghost" style="padding:6px 10px;font-size:12px" onclick="doExtend('${s.id}')">📅 Kun qo'shish</button>
+        <button class="btn btn-primary" style="padding:6px 10px;font-size:12px" onclick="doCheckout('${s.id}')">🚪 Check-out</button>
+      </div></div>`;
+  }).join('');
+
+  const noShowList=noShow.length?`<div class="panel" style="margin-top:12px"><div class="panel-h"><h3>⚠ Kelmagan bronlar (${noShow.length})</h3><span class="spacer"></span><span style="font-size:11.5px;color:var(--txt-3)">Auditni to'xtatmaydi</span></div>
+    ${noShow.map(s=>`<div class="audit-item"><div class="dot"></div><div class="body"><b>Xona ${s.room} · ${s.firstName} ${s.lastName}</b><p>Kelishi kerak edi: ${fmt(s.inDate)} — check-in qilinmagan</p></div>
+      <div class="meta"><button class="btn btn-ghost" style="padding:6px 10px;font-size:12px" onclick="openFolio('${s.id}')">Ochish</button></div></div>`).join('')}</div>`:'';
+
   return `<div class="hint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 14a8 8 0 1 1-9-9 6 6 0 0 0 9 9z"/></svg>
-    Nochnoy audit — Shelter uslubida. Bugungi sanadan keyingi kunga o'tishdan oldin barcha chiqishi kerak bo'lgan mehmonlar ko'rib chiqiladi. Ular hal qilinmaguncha keyingi sanaga o'tib bo'lmaydi.</div>
+    Dastur sanasi — <b>${fmt(base)}</b>. Sana <b>faqat shu audit orqali</b> oldinga suriladi (kompyuter kuni o'zgarsa ham dastur joyida turadi). Chiqishi kerak bo'lgan xonalar hal qilinmaguncha keyingi kunga o'tib bo'lmaydi.</div>
   <div class="stats">
+    <div class="stat"><div class="l">Dastur sanasi</div><div class="v" style="font-size:20px">${fmt(base)}</div></div>
     <div class="stat"><div class="l">Qoladigan mehmon</div><div class="v">${staying.length}</div></div>
-    <div class="stat"><div class="l">Chiqishi kerak</div><div class="v" style="color:${leaving.length?'var(--red-ink)':'var(--green-ink)'}">${leaving.length}</div></div>
+    <div class="stat"><div class="l">Hal qilinishi kerak</div><div class="v" style="color:${leaving.length?'var(--red-ink)':'var(--green-ink)'}">${leaving.length}</div></div>
   </div>
-  ${leaving.length?`<div class="panel"><div class="panel-h"><h3>${P("Hal qilinishi kerak")}</h3></div>${list}</div>`:''}
-  <div class="panel" style="text-align:center;padding:6px">
-    <button class="btn ${leaving.length?'btn-ghost':'btn-primary'}" style="margin:14px auto;max-width:340px" ${leaving.length?'disabled style="opacity:.5;cursor:not-allowed;margin:14px auto"':''} onclick="runAudit()">
-      ${leaving.length?`Avval ${leaving.length} ta mehmonni hal qiling`:'Auditni yakunlash → keyingi kunga o\'tish'}</button>
+  ${leaving.length?`<div class="panel"><div class="panel-h"><h3>⛔ Bu xonalar hal qilinmaguncha audit bo'lmaydi (${leaving.length})</h3></div>
+    <div class="mini-hint" style="padding:8px 16px;line-height:1.6">Har bir xona uchun: mehmon <b>qoladigan</b> bo'lsa — <b>Kun qo'shing</b>; <b>ketadigan</b> bo'lsa — <b>Check-out</b> qiling.</div>
+    ${list}</div>`
+   :`<div class="panel"><div class="empty-state" style="color:var(--green-ink)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 6L9 17l-5-5"/></svg>
+      Hamma xona hal qilingan — audit qilishingiz mumkin.</div></div>`}
+  ${noShowList}
+  <div class="panel" style="text-align:center;padding:6px;margin-top:12px">
+    <button class="btn ${leaving.length?'btn-ghost':'btn-primary'}" style="margin:14px auto;max-width:420px${leaving.length?';opacity:.5;cursor:not-allowed':''}" ${leaving.length?'disabled':''} onclick="runAudit()">
+      ${leaving.length?`⛔ Avval ${leaving.length} ta xonani hal qiling`:`🌙 Auditni yakunlash → ${fmt(new Date(base.getTime()+DAY))} ga o'tish`}</button>
   </div>`;
 }
 function runAudit(){
-  const leaving=stays.filter(s=>s.status==='in' && stripTime(s.outDate).getTime()===base.getTime());
-  if(leaving.length){ toast('Avval chiqishi kerak mehmonlarni hal qiling.',false); return; }
+  const leaving=stays.filter(s=>s.status==='in' && stripTime(s.outDate).getTime()<=base.getTime());
+  if(leaving.length){
+    toast(`Avval ${leaving.length} ta xonani hal qiling: ${leaving.slice(0,5).map(s=>s.room).join(', ')}${leaving.length>5?'...':''}`,false);
+    return;
+  }
+  const oldDay=fmt(base);
   // Kunni +1 kunga surish — butun dasturda (base joyida o'zgaradi)
   base.setTime(base.getTime()+DAY);
-  ganttStart=new Date(base.getTime()-DAY);
-  const cd=document.getElementById('curDate'); if(cd)cd.textContent=fmt(new Date(ganttStart.getTime()+DAY));
+  ganttStart=new Date(base.getTime()-2*DAY);
+  const cd=document.getElementById('curDate'); if(cd)cd.textContent=fmt(base);
+  // Nazoratga yozamiz — kim, qachon audit qildi
+  auditLog.unshift({room:'—',guest:'—',type:'out',text:`🌙 NOCHNOY AUDIT: ${oldDay} kuni yopildi → yangi kun ${fmt(base)}`,
+    amount:0,reason:'',by:role==='admin'?'Administrator':'Menejer',time:uzTime()+' · '+fmtShort(base),day:ymd(base),
+    stayDate:oldDay,actDate:fmt(base)});
+  if(typeof cloudLogPush==='function') cloudLogPush(auditLog[0]);
+  lastFingerprint=''; saveState();
   render(); buildNav(); go('dashboard');
   toast('Nochnoy audit yakunlandi. Yangi kun: '+fmt(base)+' ✓',true);
 }
@@ -3239,11 +3366,10 @@ async function cloudLoad(){
     const {data:st,error:e3}=await SB.from('settings').select('data').eq('hotel_id',HOTEL_ID).maybeSingle();
     if(e3) throw e3;
     const d=(st&&st.data)||{};
-    // Sana: serverdagi sana faqat HAQIQIY bugundan keyin bo'lsa qabul qilinadi
-    // (eski test sanasi qaytib kelmasligi uchun; nochnoy audit sanani oldinga suradi)
-    const realToday=todayTashkent();
-    if(d.base && d.base>=realToday.getTime()) base.setTime(d.base);
-    else base.setTime(realToday.getTime());
+    // ⚠️ ISH KUNI (business date) — FAQAT nochnoy audit bilan suriladi.
+    // Kompyuter kuni oldinga ketsa ham, dastur sanasi joyida turadi (Shelter/Exely uslubi).
+    if(d.base) base.setTime(d.base);
+    else base.setTime(todayTashkent().getTime());   // birinchi ishga tushirish
     ganttStart=new Date(base.getTime()-2*DAY);
     if(d.rooms) rooms=d.rooms;
     if(d.typeRates) typeRates=d.typeRates;
@@ -3349,13 +3475,16 @@ function startCloudSync(){
 }
 
 function resetState(){
-  if(!confirm("SERVERDAGI barcha ma'lumot (mehmonlar, to'lovlar) o'chadi. Bu qaytarib bo'lmaydi! Davom etasizmi?")) return;
-  if(!confirm("Ishonchingiz komilmi? Hamma narsa o'chadi.")) return;
+  if(role!=='manager'){ toast('Bu amalni faqat menejer bajaradi.',false); return; }
+  if(!confirm("SERVERDAGI barcha ma'lumot o'chadi:\n• Mehmonlar va bronlar\n• To'lovlar\n• ADMIN NAZORATI JURNALI\n\nBu qaytarib bo'lmaydi! Davom etasizmi?")) return;
+  if(!confirm("Ishonchingiz komilmi? Nazorat jurnali ham o'chadi.")) return;
   (async()=>{
     try{
       await SB.from('stays').delete().eq('hotel_id',HOTEL_ID);
+      await SB.from('audit_log').delete().eq('hotel_id',HOTEL_ID);   // ⚠️ nazorat jurnali ham (test uchun)
       await SB.from('settings').update({data:{}}).eq('hotel_id',HOTEL_ID);
-      toast('Server tozalandi.',true);
+      stays=[]; auditLog=[]; lastFingerprint='';
+      toast('Server to\'liq tozalandi (jurnal bilan).',true);
       setTimeout(()=>location.reload(),800);
     }catch(e){ toast('Xato: '+e.message,false); }
   })();
