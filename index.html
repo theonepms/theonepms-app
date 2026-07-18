@@ -45,7 +45,26 @@ html.dark input,html.dark select,html.dark textarea{background:var(--panel-2);co
 .ttbtn:hover{background:var(--panel-2);color:var(--brand-ink);border-color:var(--brand)}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
-body{font-family:Inter,system-ui,sans-serif;background:var(--paper);color:var(--txt);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+body{font-family:Inter,system-ui,sans-serif;background:var(--paper);color:var(--txt);font-size:var(--ui-scale,15px);line-height:1.5;-webkit-font-smoothing:antialiased}
+/* Matn hajmi: butun dastur bo'ylab nisbatan kattalashadi/kichrayadi */
+html[data-scale="sm"]{--sc:.92}
+html[data-scale="md"]{--sc:1}
+html[data-scale="lg"]{--sc:1.12}
+html[data-scale="lg"] .data{font-size:14.5px}
+html[data-scale="lg"] .data th{font-size:12px}
+html[data-scale="lg"] .folio-act,html[data-scale="lg"] .btn{font-size:14.5px}
+html[data-scale="lg"] .g-label b{font-size:15.5px}
+html[data-scale="lg"] .resv{font-size:12px}
+html[data-scale="lg"] .stat .v{font-size:26px}
+html[data-scale="lg"] .mini-hint{font-size:13px}
+html[data-scale="lg"] .nav-item{font-size:14.5px}
+html[data-scale="sm"] .data{font-size:12.5px}
+html[data-scale="sm"] .data th{font-size:10.5px}
+html[data-scale="sm"] .folio-act,html[data-scale="sm"] .btn{font-size:12.5px}
+html[data-scale="sm"] .resv{font-size:10px}
+html[data-scale="sm"] .stat .v{font-size:20px}
+html[data-scale="sm"] .mini-hint{font-size:11px}
+html[data-scale="sm"] .nav-item{font-size:12.5px}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
 input,select,textarea{font-family:inherit;font-size:14px;color:var(--txt)}
 h1,h2,h3,h4{font-family:'Space Grotesk',Inter,sans-serif;font-weight:600;letter-spacing:-.01em}
@@ -567,6 +586,26 @@ table.data tr:hover td{background:var(--panel-2)}
 <script>
 /* ================= STATE ================= */
 const DAY=864e5;
+/* --- Manfiy raqam KIRITIB BO'LMAYDI (barcha summa/narx/tun maydonlarida) --- */
+function blockNeg(e){
+  if(e.key==='-'||e.key==='–'||e.key==='—'||e.key==='e'||e.key==='E'||e.key==='+'){ e.preventDefault(); return false; }
+  return true;
+}
+function cleanPaste(e){
+  try{
+    const txt=(e.clipboardData||window.clipboardData).getData('text')||'';
+    if(/[-–—eE+]/.test(txt)){
+      e.preventDefault();
+      const clean=txt.replace(/[^\d.,]/g,'').replace(',','.');
+      const el=e.target;
+      el.value=clean;
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true}));
+      return false;
+    }
+  }catch(err){}
+  return true;
+}
 const fmt=d=>String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+d.getFullYear();
 const fmtShort=d=>String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0');
 const ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -880,6 +919,24 @@ const PHR={
 };
 function P(uz){ if(LANG==='uz')return uz; const e=PHR[uz]; if(!e)return uz; return LANG==='ru'?e[0]:e[1]; }
 function setLang(l){LANG=l;buildNav();render();}
+/* ===== MATN HAJMI (har xodim o'z kompyuterida tanlaydi) ===== */
+let UI_SCALE='md';
+try{ UI_SCALE=localStorage.getItem('theonepms_scale')||'md'; }catch(e){}
+function applyScale(){
+  const px={sm:13.5,md:15,lg:17}[UI_SCALE]||15;
+  document.documentElement.style.setProperty('--ui-scale',px+'px');
+  document.documentElement.setAttribute('data-scale',UI_SCALE);
+}
+function setScale(v){
+  UI_SCALE=v;
+  try{ localStorage.setItem('theonepms_scale',v); }catch(e){}
+  applyScale(); render();
+  toast('Matn hajmi: '+({sm:'Kichik',md:"O'rta",lg:'Katta'})[v]+' ✓',true);
+}
+function sizeBtn(v,label,px){
+  return `<button class="${UI_SCALE===v?'on':''}" onclick="setScale('${v}')" style="font-size:${px}">${label}</button>`;
+}
+applyScale();
 
 /* xona turlari (til bilan tarjima bo'ladi) */
 const ROOM_TYPES=['std','twin','dlx','lux'];
@@ -987,6 +1044,7 @@ function render(){
   else if(page==='nazorat') v.innerHTML=renderNazorat();
   else if(page==='emehmon') v.innerHTML=renderEmehmon();
   else if(page==='audit') v.innerHTML=renderAudit();
+  else if(page==='kunlik') v.innerHTML=renderKunlik();
   if(page==='shaxmatka') wireGantt();
   saveState();
 }
@@ -1008,26 +1066,56 @@ function endFrac(s){
   return e;
 }
 /* kun bo'yicha lane — bir kun ustma-ust tushgan bronlar vertikal joylashadi (oldingiday) */
+/* --- Bronning aniq boshlanish/tugash payti (kun + soat) --- */
+function stayStartMs(s){
+  const d=stripTime(s.inDate).getTime();
+  const t=toMin(s.arrTime||'');
+  return d + (t==null?14*60:t)*60000;
+}
+function stayEndMs(s){
+  const sameDay=stripTime(s.outDate).getTime()===stripTime(s.inDate).getTime();
+  const d=stripTime(s.outDate).getTime();
+  let t=toMin(s.checkoutTime||'');
+  if(t==null){
+    if(sameDay) return stayStartMs(s)+2*3600000;   // kunduzgi, hali chiqmagan — 2 soat deb olamiz
+    t=12*60;                                       // odatdagi chiqish 12:00
+  }
+  return d + t*60000;
+}
+/* --- QAVAT (lane) — VAQTI to'qnashmasa BIR qatorga (A variant) --- */
 function laneFor(room){
-  const active=stays.filter(s=>s.room===room && s.status!=='canceled').sort((a,b)=>a.inDate-b.inDate);
+  const active=stays.filter(s=>s.room===room && s.status!=='canceled')
+                    .sort((a,b)=>stayStartMs(a)-stayStartMs(b));
   const canceled=stays.filter(s=>s.room===room && s.status==='canceled');
-  const laneEnds=[];
+  const laneEnds=[];   // har qavatning oxirgi band payti (ms)
   active.forEach(s=>{
-    const inD=stripTime(s.inDate).getTime(), outD=stripTime(s.outDate).getTime();
-    const endD=Math.max(outD,inD+DAY); // kunduzgi (out==in) ham 1 kunlik joy egallaydi
+    const st=stayStartMs(s), en=Math.max(stayEndMs(s), st+30*60000);
     let placed=false;
-    for(let i=0;i<laneEnds.length;i++){ if(inD>=laneEnds[i]){ s._lane=i; laneEnds[i]=endD; placed=true; break; } }
-    if(!placed){ s._lane=laneEnds.length; laneEnds.push(endD); }
+    for(let i=0;i<laneEnds.length;i++){
+      if(st>=laneEnds[i]-1000){ s._lane=i; laneEnds[i]=en; placed=true; break; }   // vaqti to'qnashmadi → shu qavatga
+    }
+    if(!placed){ s._lane=laneEnds.length; laneEnds.push(en); }
   });
   canceled.forEach(s=>{ s._lane=laneEnds.length; });
   return {list:active.concat(canceled),lanes:Math.max(1,laneEnds.length+(canceled.length?1:0))};
+}
+/* 0 narxli bron — check-out'dan keyin ABADIY qizil (shubhali belgi, iz o'chmaydi) */
+function isZeroPriceStay(s){
+  if(s.zeroFlag) return true;                       // bir marta belgilangan — abadiy qoladi
+  const n=nights(s), rates=s.rates||[];
+  const stayCost=rates.length?rates.reduce((a,b)=>a+b,0):(s.price||0);
+  return stayCost<=0;
 }
 function stayBg(s){
   const p=paidSum(s), n=nights(s), rates=s.rates||Array(n).fill(s.price/n);
   let covered=0,acc=0;
   for(let i=0;i<n;i++){ acc+=rates[i]; if(p+1e-6>=acc) covered=i+1; else break; }
   if(s.status==='canceled') return `${statusColors.cancel};background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.16) 0 5px,transparent 5px 10px)`;
-  if(s.status==='out') return balance(s)>0 ? statusColors.outdebt : statusColors.out;
+  if(s.status==='out'){
+    if(isZeroPriceStay(s)) return statusColors.outdebt;   // 0 narx → abadiy qizil
+    return balance(s)>0 ? statusColors.outdebt : statusColors.out;
+  }
+  if(isZeroPriceStay(s)) return s.status==='in'?statusColors.in:statusColors.book;  // 0 narx — "to'langan" deb ko'rsatmaymiz
   if(covered>=n) return statusColors.paid;
   if(covered<=0) return s.status==='in'?statusColors.in:statusColors.book;
   const pct=Math.round(covered/n*100);
@@ -1036,15 +1124,22 @@ function stayBg(s){
 function stayClass(s){ return {cls:'',style:`background:${stayBg(s)}`}; }
 function renderGantt(){
   const days=ganttDays(), ND=days.length;
-  const todayIdx=days.findIndex(d=>d.getTime()===base.getTime());
+  const todayIdx=days.findIndex(d=>stripTime(d).getTime()===stripTime(base).getTime());
   let headCols='';
   days.forEach((d,i)=>{ headCols+=`<div class="g-dayh ${i===todayIdx?'today':''}">${wdName(d.getDay())}<small>${fmtShort(d)}</small></div>`; });
+  const rowsHtml=renderGanttRows();
+  return renderGanttShell(headCols, rowsHtml, days, ND);
+}
 
+/* Faqat XONA QATORLARI — surishda shu qism qayta chiziladi */
+function renderGanttRows(){
+  const days=ganttDays(), ND=days.length;
+  const todayIdx=days.findIndex(d=>stripTime(d).getTime()===stripTime(base).getTime());
   const LANE=22;
   let rowsHtml='';
   rooms.forEach(rm=>{
     const {list,lanes}=laneFor(rm.n);
-    const rowH=Math.max(LANE+10,(lanes+1)*LANE+8);
+    const rowH=Math.max(LANE+10,lanes*LANE+8);   // lanes = QAVAT SONI (ortiqcha qavat qo'shmaymiz)
     // fon kataklari (bosib bron qo'shish)
     let cells='';
     days.forEach((d,ci)=>{
@@ -1055,16 +1150,39 @@ function renderGantt(){
     });
     // barlar — to'liq kun kataklarini egallaydi, ustma-ust (vertical) joylashadi
     let bars='';
+    // 1) har bir bron uchun gorizontal o'rin (kun birligida) hisoblaymiz
+    const geo=[];
     list.forEach(s=>{
       const dayIdx=Math.round((stripTime(s.inDate)-ganttStart)/DAY);
       const span=Math.max(1,Math.round((stripTime(s.outDate)-stripTime(s.inDate))/DAY));
       const du=isDayUse(s);
-      const coF=du?0:0.42;                                    // chiqish kuniga sal o'tadi (kunduzgi bo'lmasa)
+      const coF=du?0:0.42;
       const earlyF=s.earlyIn?0.35:0, lateF=s.lateOut?0.5:0;
-      // TURNOVER: agar shu xonada shu kuni boshqa mehmon chiqib ketgan bo'lsa — yangi bron kechroq boshlanadi (orada bo'shliq)
       const turn=stays.some(x=>x.room===s.room && x.id!==s.id && x.status!=='canceled' && stripTime(x.outDate).getTime()===stripTime(s.inDate).getTime());
-      const startInset=turn?0.55:0;
-      let L=dayIdx-earlyF+startInset, R=dayIdx+span+coF+lateF;
+      const startInset=(turn&&!du)?0.55:0;
+      geo.push({s, L:dayIdx-earlyF+startInset, R:dayIdx+span+coF+lateF, du});
+    });
+    // 2) BIR QAVATDA to'qnashib qolganlar bo'lsa — joyni teng bo'lib beramiz (A variant)
+    const byLane={};
+    geo.forEach(g=>{ const k=g.s._lane; (byLane[k]=byLane[k]||[]).push(g); });
+    Object.keys(byLane).forEach(k=>{
+      const arr=byLane[k].sort((a,b)=>a.L-b.L);
+      let i=0;
+      while(i<arr.length){
+        let j=i, maxR=arr[i].R;
+        while(j+1<arr.length && arr[j+1].L < maxR-0.001){ j++; maxR=Math.max(maxR,arr[j].R); }
+        const cnt=j-i+1;
+        if(cnt>1){                       // to'qnashgan guruh — teng bo'lamiz
+          const minL=arr[i].L, w=(maxR-minL)/cnt;
+          for(let q=0;q<cnt;q++){ arr[i+q].L=minL+q*w; arr[i+q].R=minL+(q+1)*w; }
+        }
+        i=j+1;
+      }
+    });
+    // 3) chizamiz
+    geo.forEach(g=>{
+      const s=g.s, du=g.du;
+      let L=g.L, R=g.R;
       if(R<=0||L>=ND) return;
       L=Math.max(0,L); R=Math.min(ND,R);
       const leftPct=L/ND*100, widPct=(R-L)/ND*100;
@@ -1073,16 +1191,23 @@ function renderGantt(){
       const corr=s.corrected?'<span class="corrbadge" title="Tuzatilgan (tamirlangan)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="16" r="3.2"/><path d="M10.3 13.7L19 5M16 5h3v3"/></svg></span>':'';
       const dun=du?` · ${s.arrTime}-${outTimeOf(s)}`:'';
       const cancl=s.status==='canceled';
-      const bh=cancl?Math.round((LANE-5)/2):(LANE-5);           // bekor qilingan chiziq — yarim balandlik
+      const bh=cancl?Math.round((LANE-5)/2):(LANE-5);
       const btop=s._lane*LANE+3+(cancl?Math.round((LANE-5)/2)-2:0);
-      bars+=`<div class="resv ${sc.cls}" style="${sc.style};top:${btop}px;left:calc(${leftPct}% + 3px);width:calc(${widPct}% - 7px);height:${bh}px;line-height:${bh-2}px;${cancl?'font-size:9px;opacity:.85;':''}" data-id="${s.id}" title="${s.firstName} ${s.lastName}${dun}${badges?' · '+badges:''}${cancl?' · bekor qilingan':''}${s.corrected?' · tuzatilgan':''}">${cancl?'✕ ':''}${s.firstName} ${s.lastName.charAt(0)}.${cancl?'':`<small> ${(s.price/1000).toFixed(0)}k</small>`}${badges}${corr}</div>`;
+      const narrow=(R-L)<0.55;                  // juda ingichka bo'lsa — faqat familiya
+      const label=cancl?`✕ ${s.firstName} ${s.lastName.charAt(0)}.`
+        : (narrow?`${s.lastName}` : `${s.firstName} ${s.lastName.charAt(0)}.<small> ${(s.price/1000).toFixed(0)}k</small>`);
+      bars+=`<div class="resv ${sc.cls}" style="${sc.style};top:${btop}px;left:calc(${leftPct}% + 3px);width:calc(${widPct}% - 7px);height:${bh}px;line-height:${bh-2}px;${cancl?'font-size:9px;opacity:.85;':''}" data-id="${s.id}" title="${s.firstName} ${s.lastName}${dun}${badges?' · '+badges:''}${cancl?' · bekor qilingan':''}${s.corrected?' · tuzatilgan':''}">${label}${badges}${corr}</div>`;
     });
     rowsHtml+=`<div class="g-row" style="height:${rowH}px">
       <div class="g-label"><b>${rm.n}</b><span>${typeLabel(rm.t)}</span></div>
       <div class="g-track" data-room="${rm.n}" style="grid-template-columns:repeat(${ND},1fr)">${cells}<div class="g-bars">${bars}</div></div>
     </div>`;
   });
+  return rowsHtml;
+}
 
+/* Shaxmatka qobig'i (izoh, sarlavha, surish paneli) */
+function renderGanttShell(headCols, rowsHtml, days, ND){
   return `
   <div class="legend">
     <div class="lg"><span class="sw" style="background:${statusColors.book}"></span>Bron</div>
@@ -1120,18 +1245,46 @@ function renderGantt(){
     <span class="gs-info">${fmtShort(days[0])} — ${fmtShort(days[ND-1])}</span>
   </div>`;
 }
-/* Shaxmatkani surish (Shelter uslubida) */
+/* Shaxmatkani surish (Shelter uslubida) — sahifa TEPAGA SAKRAMAYDI */
 function ganttSlide(v){
-  const off=+v;                                  // bugundan necha kun surildi
+  const off=+v;
   ganttStart=new Date(base.getTime()+off*DAY-2*DAY);
   const cd=document.getElementById('curDate'); if(cd)cd.textContent=fmt(new Date(ganttStart.getTime()+2*DAY));
-  render();
-  const sl=document.getElementById('ganttSlider'); if(sl) sl.focus();
+  redrawGanttOnly(off);
 }
 function ganttToday(){
   ganttStart=new Date(base.getTime()-2*DAY);
   const cd=document.getElementById('curDate'); if(cd)cd.textContent=fmt(base);
-  render();
+  redrawGanttOnly(0);
+}
+/* Faqat shaxmatka jadvalini qayta chizamiz — sahifa joyida qoladi, slider qo'lda qoladi */
+function redrawGanttOnly(off){
+  const view=document.getElementById('view');
+  const wrap=view?view.querySelector('.gantt-wrap'):null;
+  if(!wrap || page!=='shaxmatka'){ render(); return; }
+  const winY=window.scrollY||window.pageYOffset||0;
+  const days=ganttDays(), ND=days.length;
+  const todayIdx=days.findIndex(d=>stripTime(d).getTime()===stripTime(base).getTime());
+  // 1) sarlavha kunlarini yangilaymiz
+  let headCols='';
+  days.forEach((d,i)=>{ headCols+=`<div class="g-dayh ${i===todayIdx?'today':''}">${wdName(d.getDay())}<small>${fmtShort(d)}</small></div>`; });
+  const headTrack=wrap.querySelector('.g-head .g-track');
+  if(headTrack) headTrack.innerHTML=headCols;
+  // 2) qatorlarni qayta chizamiz
+  const fresh=document.createElement('div');
+  fresh.innerHTML=renderGanttRows();
+  const g2=wrap.querySelector('.gantt2');
+  if(g2){
+    Array.from(g2.querySelectorAll('.g-row:not(.g-head)')).forEach(r=>r.remove());
+    while(fresh.firstChild) g2.appendChild(fresh.firstChild);
+  }
+  wireGantt();
+  // 3) sana oralig'i yozuvi + slider qiymati
+  const info=view.querySelector('.gs-info');
+  if(info) info.textContent=fmtShort(days[0])+' — '+fmtShort(days[ND-1]);
+  const sl=document.getElementById('ganttSlider');
+  if(sl && off!==undefined && +sl.value!==off) sl.value=off;
+  window.scrollTo(0,winY);   // sahifa joyida qolsin
 }
 function stripTime(d){const x=new Date(d);x.setHours(0,0,0,0);return x;}
 let groupSel=new Set(), groupDate=null;
@@ -1340,7 +1493,7 @@ function drawRegister(){
         <div class="field"><label>Kompaniya / kanal (harf yozing → chiqadi)</label>
           <input list="companyList" value="${r.company}" oninput="regState.company=this.value" placeholder="Walk-in, Booking...">
           <datalist id="companyList">${companies.map(c=>`<option value="${c}">`).join('')}</datalist></div>
-        <div class="field"><label>${P("Nechta tun")}</label><input type="number" min="1" value="${r.nights}" onchange="regNights(this.value)" ${r.dayUse?'disabled style="background:var(--panel-2);color:var(--txt-3)"':''}></div>
+        <div class="field"><label>${P("Nechta tun")}</label><input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="1" value="${r.nights}" onchange="regNights(this.value)" ${r.dayUse?'disabled style="background:var(--panel-2);color:var(--txt-3)"':''}></div>
         <div class="field"><label>Kelish vaqti 🔒 (avtomatik)</label><input value="${r.arrTime}" disabled style="background:var(--panel-2);color:var(--txt-2);cursor:not-allowed"></div>
       </div>
       <label style="display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;cursor:pointer;user-select:none;margin:-2px 0 8px">
@@ -1352,14 +1505,14 @@ function drawRegister(){
       ${r.guests.length<6?`<button class="addguest" onclick="addGuest()"><span style="display:inline-flex;align-items:center;gap:7px"><span style="display:inline-flex;width:20px;height:20px;border-radius:50%;background:var(--brand);color:#fff;align-items:center;justify-content:center;font-size:15px;font-weight:700">+</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>${P('Yana mehmon qo\'shish')}</span></button>`:''}
 
       <div class="field" style="margin-top:14px"><label>Xona narxi — 1 kunga (nachisleniye, ruchnoy)</label>
-        <input type="number" id="regNightly" value="${r.nightly||''}" oninput="regState.nightly=+this.value;drawTotals()" placeholder="Masalan: 500000"></div>
+        <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="regNightly" value="${r.nightly||''}" oninput="regState.nightly=+this.value;drawTotals()" placeholder="Masalan: 500000"></div>
       <div class="hint" style="background:#eff6ff;color:var(--brand-ink)"><span>Umumiy: <b id="regTotal">${money(total)}</b> &nbsp;(<span id="regCalc">${r.nights} tun × ${money(+r.nightly||0)}</span>)${r.rooms.length>1?` × ${r.rooms.length} xona`:''}</span></div>
 
       <div class="paybox">
         <div style="font-weight:600;font-size:13px;margin-bottom:10px">To'lov (majburiy emas — hozir yoki keyin)</div>
         <div class="payrow2">
           <div id="regMethod">${methodSelHtml()}</div>
-          <input type="number" id="regAmt" value="${r.pay.amount||''}" oninput="regState.pay.amount=+this.value;drawTotals()" placeholder="To'langan summa" style="padding:9px 12px;border:1.5px solid var(--line);border-radius:7px">
+          <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="regAmt" value="${r.pay.amount||''}" oninput="regState.pay.amount=+this.value;drawTotals()" placeholder="To'langan summa" style="padding:9px 12px;border:1.5px solid var(--line);border-radius:7px">
         </div>
         <div class="paysummary"><span>Qoldiq (qarz)</span><b id="regBal" style="color:var(--red-ink)">${money(total-(+r.pay.amount||0))}</b></div>
       </div>
@@ -1702,13 +1855,84 @@ function doPriceCorrect(id){
   openActionModal(id,'correct');
 }
 function doRestore(id){
-  if(role!=='manager'){toast('Faqat menejer tiklay oladi.',false);return;}
+  if(role!=='manager'){denyMgr('Vastanavit (qayta tiklash)');return;}
   const s=stays.find(x=>x.id===id); if(!s)return;
+  // Tiklangandan keyingi oraliq
+  const newOut=s._preOut?new Date(s._preOut):new Date(s.outDate);
+  // tiklangandan KEYIN bron qanday oraliqni egallaydi — shuni hisoblaymiz
+  const after=Object.assign({},s,{status:'in',checkoutTime:'',checkoutDate:null,outDate:newOut});
+  const st=stayStartMs(after);
+  const en=Math.max(stayEndMs(after), st+30*60000);
+  // Shu xonada VAQTI to'qnashadigan boshqa bron bormi?
+  const clash=stays.filter(x=>x.id!==id && x.room===s.room && x.status!=='canceled')
+    .filter(x=>{ const xs=stayStartMs(x), xe=Math.max(stayEndMs(x),xs+30*60000); return xs<en-1000 && xe>st+1000; });
+  if(!clash.length){ restoreNow(s,newOut); return; }   // ✅ to'qnashmadi — hech kim ko'chmaydi
+  // ⚠️ To'qnashdi — menejerga tanlov beramiz
+  actState={id,kind:'restore',reason:'',newRoom:'',mode:'dayuse',clash,newOut};
+  drawRestoreModal();
+}
+function restoreNow(s,newOut,room){
   s.status='in'; s.checkoutTime=''; s.checkoutDate=null;
-  // check-out kunduzgi qilib qisqartirgan bo'lsa — asl chiqish sanasini qaytaramiz
-  if(s._preOut){ s.outDate=new Date(s._preOut); s._preOut=null; recalc(s); }
+  if(room && room!==s.room){
+    const old=s.room; s.room=room;
+    logAction(s,'move',`Vastanavit: boshqa xonaga tiklandi ${old} → ${room}`,0);
+  }
+  if(newOut){ s.outDate=new Date(newOut); s._preOut=null; recalc(s); }
   logAction(s,'warn','Check-out BEKOR QILINDI — bron qayta tiklandi (vastanavit)',0);
-  openFolio(id); render(); toast('Bron qayta tiklandi — chiqish sanasi tiklandi ✓',true);
+  closeAction(); openFolio(s.id); render(); toast('Bron qayta tiklandi ✓',true);
+}
+function drawRestoreModal(){
+  const a=actState, s=stays.find(x=>x.id===a.id);
+  document.getElementById('actOverlay')?.remove();
+  const busy=a.clash.map(x=>`<div class="mini-hint" style="padding:2px 0">• <b>${x.firstName} ${x.lastName}</b> — ${fmt(x.inDate)} ${x.arrTime||''} dan</div>`).join('');
+  // bo'sh xonalar
+  const st=stayStartMs(s), en=Math.max(stripTime(a.newOut).getTime()+12*3600000, st+30*60000);
+  const free=rooms.filter(r=>r.n!==s.room && !stays.some(x=>x.status!=='canceled' && x.room===r.n
+      && stayStartMs(x)<en-1000 && Math.max(stayEndMs(x),stayStartMs(x)+30*60000)>st+1000));
+  const dayUseOut=new Date(stripTime(s.inDate));
+  const html=`<div class="modal-ov" id="actOverlay" onclick="if(event.target===this)closeAction()">
+    <div class="modal" style="max-width:520px">
+      <div class="modal-h"><h3>♻ Vastanavit — xona band</h3><button class="x" onclick="closeAction()">✕</button></div>
+      <div class="modal-b">
+        <div style="background:var(--red-bg);border:1px solid var(--red);border-radius:10px;padding:10px 12px;margin-bottom:12px">
+          <div style="font-weight:700;font-size:13px;color:var(--red-ink);margin-bottom:4px">⚠️ ${s.room}-xona band</div>
+          ${busy}
+        </div>
+        <div class="field"><label>Qanday tiklaymiz?</label>
+          <div class="rolerow" style="grid-template-columns:1fr;gap:8px;margin:0">
+            <button class="${a.mode==='dayuse'?'on':''}" style="text-align:left;padding:12px 14px" onclick="actState.mode='dayuse';drawRestoreModal()">
+              <b>Kunduzgi qilib tiklash</b><br><span style="font-size:11.5px;color:var(--txt-3)">${fmt(s.inDate)} · ${s.arrTime}–${s.checkoutTime||'—'} — hech kim ko'chmaydi (tavsiya)</span></button>
+            <button class="${a.mode==='room'?'on':''}" style="text-align:left;padding:12px 14px" ${free.length?'':'disabled'} onclick="actState.mode='room';drawRestoreModal()">
+              <b>Boshqa xonaga tiklash</b><br><span style="font-size:11.5px;color:var(--txt-3)">${free.length?'Ketgan mehmon boshqa xonaga o\'tadi — yashayotgan mehmon tegilmaydi':'Bo\'sh xona yo\'q'}</span></button>
+          </div></div>
+        ${a.mode==='room'?`<div class="field"><label>Qaysi xonaga</label>
+          <select onchange="actState.newRoom=this.value">
+            <option value="">— tanlang —</option>
+            ${free.map(r=>`<option value="${r.n}"${a.newRoom===r.n?' selected':''}>${r.n} · ${typeLabel(r.t)}</option>`).join('')}
+          </select></div>`:''}
+        <div class="field"><label>Sabab (majburiy)</label>
+          <textarea rows="2" oninput="actState.reason=this.value" placeholder="Nega tiklanmoqda?">${a.reason}</textarea></div>
+        <div class="mini-hint" style="padding:0;color:var(--red-ink)">🔒 Vastanavit admin nazoratiga yoziladi.</div>
+      </div>
+      <div class="modal-f"><button class="btn btn-ghost" onclick="closeAction()">Yopish</button>
+        <button class="btn btn-primary" onclick="commitRestore()">Tiklash</button></div>
+    </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function commitRestore(){
+  const a=actState, s=stays.find(x=>x.id===a.id);
+  if(!a.reason.trim()){ toast('Sababni yozing (majburiy).',false); return; }
+  if(a.mode==='dayuse'){
+    const co=s.checkoutTime||uzTime();
+    s.checkoutTime='';
+    restoreNow(s,new Date(stripTime(s.inDate)));
+    s.arrTime=s.arrTime||'08:00';
+    logAction(s,'warn',`Kunduzgi qilib tiklandi (${fmt(s.inDate)} · ${s.arrTime}–${co})`,0,a.reason);
+  } else {
+    if(!a.newRoom){ toast('Xonani tanlang.',false); return; }
+    restoreNow(s,a.newOut,a.newRoom);
+    logAction(s,'warn',`Boshqa xonaga tiklandi: ${a.newRoom}`,0,a.reason);
+  }
 }
 
 /* Universal action modal (to'lov / narx / vozvrat / qo'shimcha to'lov) — prompt() sandboxda ishlamaydi */
@@ -1813,7 +2037,7 @@ function drawActionModal(){
       ${chargeSection}
       ${a.rSel?`
         <div class="field" style="margin-top:14px"><label>Qaytariladigan summa (so'm)${maxAmt?` — ko'pi bilan ${money(maxAmt)}`:''}</label>
-          <input type="number" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="To'liq yoki qisman"></div>
+          <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="To'liq yoki qisman"></div>
         ${isPay?`<div class="field"><label>Qaysi usulda qaytariladi</label><div id="actMethod">${actMethodHtml()}</div></div>`:''}
         <div class="t-box" style="margin-top:6px">
           <div class="t-row"><span>Jami hisob</span><b>${money(totalDue(s))}</b></div>
@@ -1825,28 +2049,28 @@ function drawActionModal(){
   } else if(a.kind==='pay'){
     bodyHtml=`
       <div class="field"><label>To'lov summasi (so'm)</label>
-        <input type="number" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 250000" autofocus></div>
+        <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 250000" autofocus></div>
       <div class="field"><label>To'lov usuli</label>
         <div id="actMethod">${actMethodHtml()}</div></div>
       <div class="folio-meta" style="margin:4px 0 10px"><div class="m"><div class="k">Joriy qarz</div><div class="val money" style="color:var(--red-ink)">${money(balance(s))}</div></div></div>`;
   } else if(a.kind==='srefund'){
     bodyHtml=`
       <div class="field"><label>Chegirma summasi (so'm)</label>
-        <input type="number" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 100000" autofocus></div>
+        <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 100000" autofocus></div>
       <div class="mini-hint" style="padding:0 0 8px;line-height:1.5">
         Bu — <b>yashash (xizmat) vozvrati</b>: pul harakati yo'q, mehmonning <b>hisobidan (qarzidan) chegiriladi</b>. To'lanmagan xonaga ham ishlaydi.<br>
         Joriy jami hisob: ${money(totalDue(s))} · qarz: ${money(balance(s))}</div>`;
   } else if(a.kind==='sadd'){
     bodyHtml=`
       <div class="field"><label>Qo'shiladigan summa (so'm)</label>
-        <input type="number" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 100000" autofocus></div>
+        <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 100000" autofocus></div>
       <div class="mini-hint" style="padding:0 0 8px;line-height:1.5">
         Bu — <b>yashash hisobiga qo'shish</b>: masalan check-in paytida 500 ming kiritilib, aslida 600 ming bo'lsa — 100 mingni qo'shasiz. Jami hisobga qo'shiladi (qarz oshadi).<br>
         Joriy jami hisob: ${money(totalDue(s))} · qarz: ${money(balance(s))}</div>`;
   } else if(a.kind==='price'){
     const fi=futureNightInfo(s);
     bodyHtml=`<div class="field"><label>Yangi 1 kunlik narx (so'm)</label>
-      <input type="number" id="actAmt" value="${a.price}" oninput="actState.price=this.value" autofocus></div>
+      <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="actAmt" value="${a.price}" oninput="actState.price=this.value" autofocus></div>
       <div class="mini-hint" style="padding:0 0 10px;line-height:1.5">
         Eski 1 kunlik narx: ${money(s.nightly||Math.round(s.price/nights(s)))}.<br>
         ⚠ O'tgan (nochnoy auditdan o'tgan) ${fi.frozen} tun <b>qotgan</b> — faqat korreksiya bilan.<br>
@@ -1854,13 +2078,13 @@ function drawActionModal(){
   } else if(a.kind==='charge'){
     bodyHtml=`
       <div class="field"><label>Nomi (nima uchun)</label><input id="actName" value="${a.name}" oninput="actState.name=this.value" placeholder="Masalan: Coca-Cola, mini-bar, kir yuvish" autofocus></div>
-      <div class="field"><label>Summa (so'm)</label><input type="number" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 15000"></div>
+      <div class="field"><label>Summa (so'm)</label><input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 15000"></div>
       <div class="mini-hint" style="padding:0;line-height:1.5">Bu — <b>pul emas</b>. Mehmon hisobiga (qarziga) qo'shiladi. Keyin to'laydi. Xato qo'shsangiz — <b>↩ Vozvrat</b> orqali olib tashlaysiz.</div>`;
   } else if(a.kind==='cancel'){
     bodyHtml=`<div class="mini-hint" style="padding:0 0 10px">⚠ Bron bekor qilinadi va shaxmatkada <b>binafsha</b> bo'lib qoladi (o'chib ketmaydi). Bu amal menejer jurnaliga yoziladi.</div>`;
   } else if(a.kind==='extend'){
     bodyHtml=`<div class="field"><label>Yangi tun soni</label>
-      <input type="number" id="actAmt" min="1" value="${a.newNights}" oninput="actState.newNights=+this.value" autofocus></div>
+      <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" id="actAmt" min="1" value="${a.newNights}" oninput="actState.newNights=+this.value" autofocus></div>
       <div class="mini-hint" style="padding:0 0 10px">Hozir: ${nights(s)} tun · chiqish ${fmt(s.outDate)}. Cho'zilsa narx avtomatik qo'shiladi (1 kun = ${money(s.nightly||Math.round(s.price/nights(s)))}).</div>`;
   } else if(a.kind==='rebook'){
     bodyHtml=`<div class="field"><label>Yangi kelish sanasi</label>
@@ -1870,7 +2094,7 @@ function drawActionModal(){
         Hozir: <b>${fmt(s.inDate)}</b> · ${nights(s)} tun. Yangi sanani tanlasangiz, bron o'sha kunga ${nights(s)} tunga ko'chadi (chiqish avtomatik).</div>`;
   } else if(a.kind==='correct'){
     bodyHtml=`<div class="field"><label>To'g'ri 1 kunlik narx (korreksiya)</label>
-      <input type="number" id="actAmt" value="${a.price}" oninput="actState.price=this.value" autofocus></div>
+      <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="actAmt" value="${a.price}" oninput="actState.price=this.value" autofocus></div>
       <div class="mini-hint" style="padding:0 0 10px;line-height:1.5">
         Eski narx: ${money(s.nightly||Math.round(s.price/nights(s)))} × ${nights(s)} tun = ${money(s.price)}.<br>
         ⚠ Bu <b>korreksiya</b> — narx xato kiritilgan bo'lsa, menejer <b>barcha kunlar</b>ni to'g'irlaydi (qotgan kunlar ham). Jurnalga yoziladi.</div>`;
@@ -1904,7 +2128,7 @@ function drawActionModal(){
         <button class="${a.elType==='early'?'on':''}" onclick="actState.elType='early';drawActionModal()">🌅 Erta kirish</button>
         <button class="${a.elType==='late'?'on':''}" onclick="actState.elType='late';drawActionModal()">🌙 Kech chiqish</button>
       </div></div>
-      <div class="field"><label>Summa (so'm) — qo'lda kiritiladi</label><input type="number" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 150000 yoki 50% narx" autofocus></div>
+      <div class="field"><label>Summa (so'm) — qo'lda kiritiladi</label><input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 150000 yoki 50% narx" autofocus></div>
       <div class="mini-hint" style="padding:0 0 8px;line-height:1.5">
         Summa folioga qo'shiladi (qarzga), invoyz va hisobotda ko'rinadi.<br>
         ${a.elType==='late'?'🌙 Kech chiqish — shaxmatkada bron <b>oldinga (keyingi kunga) sal suriladi</b>.':'🌅 Erta kirish — shaxmatkada bron <b>orqaga sal suriladi</b>.'} Vaqtlar O'zbekiston soatida ko'rinadi.</div>`;
@@ -2111,6 +2335,12 @@ function commitCheckout(id,tm){
   }
 
   logAction(s,'out',`Check-out: ${fmt(base)} · ${s.checkoutTime}`,0);
+  // ⚠️ 0 narxli bron bo'lsa — abadiy belgi qo'yamiz (keyin narx to'g'rilansa ham qizil qoladi)
+  const stayCost=(s.rates||[]).reduce((a,b)=>a+b,0);
+  if(stayCost<=0){
+    s.zeroFlag=true;
+    logAction(s,'warn','⚠️ YASHASH NARXI 0 — chiqib ketdi. Bron abadiy qizil belgilandi (tekshiruv uchun)',0);
+  }
   closeAction(); closeFolio(); render(); toast('Check-out bajarildi ✓',true);
 }
 /* Xona ko'chirish — faqat o'sha sanalarda bo'sh xonalar ko'rsatiladi (E-mehmon uslubida) */
@@ -2713,7 +2943,7 @@ function emCompare(rawAll){
 }
 
 function renderEmehmon(){
-  const tolInput=`<input type="number" min="0" value="${emehmonTolerance}" onchange="setEmTol(this.value)" style="width:64px;padding:6px 8px;border:1.5px solid var(--line);border-radius:7px;text-align:center;font-weight:600">`;
+  const tolInput=`<input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" value="${emehmonTolerance}" onchange="setEmTol(this.value)" style="width:64px;padding:6px 8px;border:1.5px solid var(--line);border-radius:7px;text-align:center;font-weight:600">`;
   let resultHtml='';
   if(emResult){
     const R=emResult.rows;
@@ -3108,7 +3338,7 @@ function renderSettings(){
     <span style="font-size:20px">${flag}</span><div><b>${label}</b><span>${code.toUpperCase()}</span></div></button>`;
 
   const typeRows=ROOM_TYPES.map(k=>`<tr><td><b>${typeLabel(k)}</b></td>
-    <td><input type="number" value="${typeRates[k]}" onchange="setTypeRate('${k}',this.value)" style="width:140px;padding:6px 8px;border:1.5px solid var(--line);border-radius:6px"></td>
+    <td><input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="${typeRates[k]}" onchange="setTypeRate('${k}',this.value)" style="width:140px;padding:6px 8px;border:1.5px solid var(--line);border-radius:6px"></td>
     <td style="color:var(--txt-3);font-size:12px">${rooms.filter(r=>r.t===k).length} ta xona</td></tr>`).join('');
 
   return `<div style="max-width:760px">
@@ -3128,6 +3358,14 @@ function renderSettings(){
           ${langBtn('uz',"O'zbekcha",'🇺🇿')}${langBtn('ru','Русский','🇷🇺')}${langBtn('en','English','🇬🇧')}
         </div>
         <div class="mini-hint" style="padding:12px 0 0">Til tanlansa — menyu, sarlavhalar, hafta kunlari, xona turlari — hammasi shu tilga o'tadi.</div>
+      </div></div>
+
+    <div class="panel"><div class="panel-h"><h3>🔠 Matn hajmi</h3><span class="spacer"></span><span class="pill">${({sm:'Kichik',md:"O'rta",lg:'Katta'})[UI_SCALE]||"O'rta"}</span></div>
+      <div class="panel-b" style="padding:18px 20px">
+        <div class="rolerow" style="grid-template-columns:1fr 1fr 1fr;margin:0">
+          ${sizeBtn('sm','Kichik','13px')}${sizeBtn('md',"O'rta",'15px')}${sizeBtn('lg','Katta','17px')}
+        </div>
+        <div class="mini-hint" style="padding:12px 0 0">Dasturdagi barcha yozuvlar hajmi o'zgaradi. Har bir xodim o'z kompyuterida o'zi tanlaydi — boshqalarga ta'sir qilmaydi.</div>
       </div></div>
 
     <div class="panel"><div class="panel-h"><h3>${t('kompaniya')}</h3></div>
@@ -3160,11 +3398,11 @@ function renderSettings(){
           <span class="tag paid">Markaziy bank (CBU)</span>
           <span style="color:var(--txt-3)">yangilangan: ${rateUpdated}</span></div>
         <div class="grid2">
-          <div class="field"><label>Dollar ($) — yozing</label><input id="usdIn" type="number" value="100" oninput="usd2som(this.value)" placeholder="100"></div>
-          <div class="field"><label>So'm — yoki bu yerga yozing</label><input id="somIn" type="number" value="${100*usdRate}" oninput="som2usd(this.value)"></div>
+          <div class="field"><label>Dollar ($) — yozing</label><input id="usdIn" type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="100" oninput="usd2som(this.value)" placeholder="100"></div>
+          <div class="field"><label>So'm — yoki bu yerga yozing</label><input id="somIn" type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="${100*usdRate}" oninput="som2usd(this.value)"></div>
         </div>
         <div class="field" style="margin-top:6px"><label>Kursni qo'lda kiritish (internet yo'q bo'lsa)</label>
-          <input type="number" value="${usdRate}" onchange="setUsdRate(this.value);render()" placeholder="12680"></div>
+          <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="${usdRate}" onchange="setUsdRate(this.value);render()" placeholder="12680"></div>
         <div class="mini-hint" style="padding:0">Kurs O'zbekiston <b>Markaziy bankidan (cbu.uz)</b> olinadi. "CBU dan yangilash" tugmasi — bugungi rasmiy kursni internetdan tortadi. Internet bo'lmasa, qo'lda kiriting.</div>
       </div></div>
 
@@ -3308,6 +3546,127 @@ function runAudit(){
   toast('Nochnoy audit yakunlandi. Yangi kun: '+fmt(base)+' ✓',true);
 }
 
+/* ================= KUNLIK HISOBOT (kun yakuni) ================= */
+let kunDate='';
+function setKunDate(v){ kunDate=v; render(); }
+function kunShift(d){
+  const cur=kunDate?new Date(kunDate.split('-')[0],+kunDate.split('-')[1]-1,+kunDate.split('-')[2]):new Date(base);
+  cur.setTime(cur.getTime()+d*DAY); kunDate=ymd(cur); render();
+}
+function renderKunlik(){
+  const sel=kunDate||ymd(base);
+  const p=sel.split('-');
+  const D=new Date(+p[0],+p[1]-1,+p[2]);
+  const dayMs=stripTime(D).getTime();
+  const sameDay=t=>t&&stripTime(new Date(t)).getTime()===dayMs;
+
+  /* --- TUSHUM (usullar bo'yicha) --- */
+  const rows=[];
+  stays.forEach(s=>(s.payments||[]).forEach(pm=>{ if(sameDay(pm.ts)) rows.push({s,pm}); }));
+  const M=[['naxt','Naqd'],['karta','Karta'],['payme','Payme'],['click','Click'],['bank','Bank o\'tkazma']];
+  const sums={}; let jamiIn=0, jamiRef=0;
+  rows.forEach(({pm})=>{
+    const k=pm.method||'naxt';
+    sums[k]=sums[k]||{in:0,ref:0};
+    if(pm.type==='ref'){ sums[k].ref+=pm.amount; jamiRef+=pm.amount; }
+    else { sums[k].in+=pm.amount; jamiIn+=pm.amount; }
+  });
+  const cardSplit={};
+  rows.filter(r=>r.pm.method==='karta').forEach(({pm})=>{
+    const c=pm.card||'Karta'; cardSplit[c]=(cardSplit[c]||0)+(pm.type==='ref'?-pm.amount:pm.amount);
+  });
+  const sof=jamiIn-jamiRef;
+
+  const payTable=M.filter(([k])=>sums[k]).map(([k,l])=>`<tr>
+      <td>${l}${k==='karta'&&Object.keys(cardSplit).length?`<div style="font-size:11px;color:var(--txt-3)">${Object.entries(cardSplit).map(([c,v])=>c+': '+somNum(v)).join(' · ')}</div>`:''}</td>
+      <td class="money">${somNum(sums[k].in)}</td>
+      <td class="money" style="color:${sums[k].ref?'var(--red-ink)':'var(--txt-3)'}">${sums[k].ref?'-'+somNum(sums[k].ref):'—'}</td>
+      <td class="money"><b>${somNum(sums[k].in-sums[k].ref)}</b></td></tr>`).join('')
+    ||`<tr><td colspan="4" style="text-align:center;color:var(--txt-3);padding:14px">Bu kuni to'lov bo'lmagan</td></tr>`;
+
+  /* --- MEHMON HARAKATI --- */
+  const kelgan=stays.filter(s=>sameDay(s.inDate) && s.status!=='canceled');
+  const ketgan=stays.filter(s=>s.status==='out' && sameDay(s.checkoutDate));
+  const yashab=stays.filter(s=>s.status!=='canceled' && stripTime(s.inDate).getTime()<=dayMs
+    && stripTime(s.checkoutDate||s.outDate).getTime()>dayMs);
+  const bandXona=new Set(yashab.map(s=>s.room)).size;
+  const bandPct=rooms.length?Math.round(bandXona/rooms.length*100):0;
+  const qarzdor=stays.filter(s=>s.status!=='canceled' && balance(s)>0
+    && stripTime(s.inDate).getTime()<=dayMs);
+  const qarzJami=qarzdor.reduce((a,s)=>a+balance(s),0);
+
+  const guestRows=list=>list.length?list.map(s=>`<tr onclick="openFolio('${s.id}')" style="cursor:pointer">
+      <td><b class="mono">${s.room}</b></td><td>${s.firstName} ${s.lastName}${(s.extra||[]).length?` <span class="tag book" style="font-size:10px">+${s.extra.length}</span>`:''}</td>
+      <td>${s.arrTime||'—'}${s.status==='out'?' → '+(s.checkoutTime||'—'):''}</td>
+      <td class="money">${somNum(totalDue(s))}</td>
+      <td class="money" style="color:${balance(s)>0?'var(--red-ink)':'var(--green-ink)'}">${balance(s)>0?somNum(balance(s)):'0'}</td></tr>`).join('')
+    :`<tr><td colspan="5" style="text-align:center;color:var(--txt-3);padding:12px">Yo'q</td></tr>`;
+
+  /* --- AUDIT holati --- */
+  const auditRec=auditLog.find(a=>a.text&&a.text.indexOf('NOCHNOY AUDIT')>=0 && a.stayDate===fmt(D));
+  const auditInfo=auditRec
+    ? `<span class="tag paid">✓ Yopilgan · ${auditRec.time} · ${auditRec.by}</span>`
+    : (dayMs<stripTime(base).getTime()?'<span class="tag" style="background:var(--red-bg);color:var(--red-ink)">⚠ Yopilmagan</span>':'<span class="tag book">Joriy kun</span>');
+
+  /* --- Kun amallari (nazoratdan) --- */
+  const dayActs=auditLog.filter(a=>(a.day||'')===sel);
+  const sezgir=dayActs.filter(a=>['warn','refund','correct'].includes(a.type));
+
+  return `<div class="panel" style="margin-bottom:14px"><div style="display:flex;align-items:center;gap:10px;padding:12px 16px;flex-wrap:wrap">
+      <button class="gs-btn" onclick="kunShift(-1)" title="Oldingi kun">‹</button>
+      <span style="font-weight:600;font-size:13px">📅 Kun:</span>
+      <input type="date" value="${sel}" onchange="setKunDate(this.value)" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px">
+      <button class="gs-btn" onclick="kunShift(1)" title="Keyingi kun">›</button>
+      <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px" onclick="setKunDate('${ymd(base)}')">📍 Bugun</button>
+      <span style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        ${auditInfo}
+        <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px" onclick="exportPageExcel()">⤓ Excel</button>
+        <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px" onclick="printPage('Kunlik hisobot — ${fmt(D)}')">🖨 Chop etish</button>
+      </span>
+    </div></div>
+
+  <div class="stats">
+    <div class="stat"><div class="l">Sof tushum</div><div class="v" style="color:var(--green-ink)">${somNum(sof)}</div></div>
+    <div class="stat"><div class="l">Band xonalar</div><div class="v">${bandXona}/${rooms.length} <span style="font-size:14px;color:var(--txt-3)">${bandPct}%</span></div></div>
+    <div class="stat"><div class="l">Kelgan / Ketgan</div><div class="v">${kelgan.length} / ${ketgan.length}</div></div>
+    <div class="stat"><div class="l">Qarzdorlik</div><div class="v" style="color:${qarzJami?'var(--red-ink)':'var(--green-ink)'}">${somNum(qarzJami)}</div></div>
+  </div>
+
+  <div class="panel"><div class="panel-h"><h3>💰 Kassa — ${fmt(D)}</h3></div>
+    <table class="data"><thead><tr><th>To'lov usuli</th><th style="text-align:right">Kirim</th><th style="text-align:right">Vozvrat</th><th style="text-align:right">Sof</th></tr></thead>
+    <tbody>${payTable}
+      <tr style="background:var(--panel-2);font-weight:700"><td>JAMI</td>
+        <td class="money">${somNum(jamiIn)}</td>
+        <td class="money" style="color:${jamiRef?'var(--red-ink)':'var(--txt-3)'}">${jamiRef?'-'+somNum(jamiRef):'—'}</td>
+        <td class="money">${somNum(sof)}</td></tr>
+    </tbody></table></div>
+
+  <div class="panel"><div class="panel-h"><h3>➡️ Kelganlar (${kelgan.length})</h3></div>
+    <table class="data"><thead><tr><th>Xona</th><th>Mehmon</th><th>Vaqt</th><th style="text-align:right">Hisob</th><th style="text-align:right">Qarz</th></tr></thead>
+    <tbody>${guestRows(kelgan)}</tbody></table></div>
+
+  <div class="panel"><div class="panel-h"><h3>⬅️ Ketganlar (${ketgan.length})</h3></div>
+    <table class="data"><thead><tr><th>Xona</th><th>Mehmon</th><th>Kelish → chiqish</th><th style="text-align:right">Hisob</th><th style="text-align:right">Qarz</th></tr></thead>
+    <tbody>${guestRows(ketgan)}</tbody></table></div>
+
+  ${qarzdor.length?`<div class="panel"><div class="panel-h"><h3>⚠️ Qarzdorlar (${qarzdor.length})</h3><span class="spacer"></span><span class="tag" style="background:var(--red-bg);color:var(--red-ink)">${money(qarzJami)}</span></div>
+    <table class="data"><thead><tr><th>Xona</th><th>Mehmon</th><th>Holat</th><th style="text-align:right">Hisob</th><th style="text-align:right">Qarz</th></tr></thead>
+    <tbody>${guestRows(qarzdor)}</tbody></table></div>`:''}
+
+  ${role==='manager'?`<div class="panel"><div class="panel-h"><h3>🔒 Kun amallari (${dayActs.length})</h3><span class="spacer"></span>
+      ${sezgir.length?`<span class="tag" style="background:var(--red-bg);color:var(--red-ink)">${sezgir.length} ta sezgir</span>`:'<span class="tag paid">Sezgir amal yo\'q</span>'}</div>
+    <table class="data"><thead><tr><th>Vaqt</th><th>Xona</th><th>Nima qilindi</th><th style="text-align:right">Summa</th><th>Kim</th></tr></thead>
+    <tbody>${dayActs.length?dayActs.map(a=>{
+        const isAdm=/admin/i.test(a.by||'');
+        return `<tr${isAdm?' style="border-left:3px solid var(--red)"':''}>
+          <td style="white-space:nowrap;font-size:12px">${a.time}</td><td><b class="mono">${a.room}</b></td>
+          <td${isAdm?' style="color:var(--red-ink)"':''}>${a.text}${a.reason?`<div style="font-size:11px;color:var(--txt-3)">💬 ${a.reason}</div>`:''}</td>
+          <td class="money">${a.amount?somNum(a.amount):'—'}</td>
+          <td style="white-space:nowrap">${isAdm?`<b style="color:var(--red-ink)">${a.by}</b>`:a.by}</td></tr>`;
+      }).join('') :`<tr><td colspan="5" style="text-align:center;color:var(--txt-3);padding:12px">Amal yo'q</td></tr>`}
+    </tbody></table></div>`:''}`;
+}
+
 /* ================= TOAST ================= */
 let toastT=null;
 function toast(msg,ok){
@@ -3321,7 +3680,7 @@ function toast(msg,ok){
 const SB_URL='https://bmycnlhryfwjihjxxshp.supabase.co';
 const SB_KEY='sb_publishable_FGaZYRcF0mewLes59vAJeQ_jvWAZxGP';
 const HOTEL_ID='grand_capital';
-let SB=null, cloudReady=false, saveTimer=null, syncTimer=null, lastSavedAt=0, cloudBusy=false, savePending=false;
+let SB=null, cloudReady=false, saveTimer=null, syncTimer=null, lastSavedAt=0, cloudBusy=false, savePending=false, seedDone=false, serverSeedTag=null;
 
 // Supabase mijozini ishga tushiramiz
 try{
@@ -3386,6 +3745,10 @@ async function cloudLoad(){
     if(d.statusColors) statusColors=Object.assign(statusColors,d.statusColors);
     lastSavedAt=d.savedAt||0;
     lastFingerprint=dataFingerprint();   // yuklangan holatni "o'zgarmagan" deb belgilaymiz
+    // ⚠️ BIR MARTALIK TOZA START (yangi versiyaga o'tishda)
+    serverSeedTag=d.seed||null;
+    serverSeedTag=d.seed||null;
+    if(d.seed===SEED_TAG){ seedDone=true; } else { await seedCleanStart(); }
     cloudBadge('☁️ Ma\'lumot yuklandi ✓',true);
     return true;
   }catch(e){
@@ -3414,7 +3777,8 @@ async function cloudSave(){
     // 2) sozlamalar
     const conf={ savedAt:Date.now(), base:base.getTime(), ganttStart:ganttStart.getTime(),
       rooms, typeRates, hotelCfg, companies, companyData, statChannels, channels,
-      pendingBookings, emArchive, emehmonTolerance, usdRate, LANG, statusColors };
+      pendingBookings, emArchive, emehmonTolerance, usdRate, LANG, statusColors,
+      seed:(seedDone?SEED_TAG:serverSeedTag)||undefined };   // yuklanmagan bo'lsa ham belgini o'chirmaymiz
     const {error:e2}=await SB.from('settings').upsert({hotel_id:HOTEL_ID,data:conf,updated_at:new Date().toISOString()},{onConflict:'hotel_id'});
     if(e2) throw e2;
     lastSavedAt=conf.savedAt;   // ⚠️ O'Z saqlashimizni eslab qolamiz — "boshqa xodim" deb o'ylamaslik uchun
@@ -3472,6 +3836,41 @@ function startCloudSync(){
       }
     }catch(e){}
   },30000);
+}
+
+/* ===== BIR MARTALIK TOZA START — hamma test o'chadi, 1 ta haqiqiy bron qoladi ===== */
+const SEED_TAG='v2026_07_18';
+async function seedCleanStart(){
+  try{
+    await SB.from('stays').delete().eq('hotel_id',HOTEL_ID);
+    await SB.from('audit_log').delete().eq('hotel_id',HOTEL_ID);
+    stays=[]; auditLog=[];
+    base.setTime(new Date(2026,6,18).getTime());
+    ganttStart=new Date(base.getTime()-2*DAY);
+    const inD=new Date(2026,6,16), outD=new Date(2026,6,19);
+    const NIGHTLY=745800;
+    const s=mkStay({
+      room:'514', firstName:'GEORGII', lastName:'CHERNETSOV',
+      gender:'Erkak', birth:'28.09.1986', citizen:"O'zbekiston", passport:'FP4010612',
+      phone:'', email:'', arrTime:'05:15', premicha:'',
+      inDate:inD, outDate:outD, status:'in',
+      nightly:NIGHTLY, rates:[NIGHTLY,NIGHTLY,NIGHTLY], extra:[], charges:[],
+      payments:[{amount:NIGHTLY*3, method:'naxt', card:'', type:'pay',
+                 time:fmtShort(inD)+' 05:15', ts:new Date(inD), by:'Administrator'}],
+      channel:'walkin'
+    });
+    recalc(s);
+    stays.push(s);
+    lastFingerprint=''; seedDone=true;
+    await cloudSave();
+    const {data:st}=await SB.from('settings').select('data').eq('hotel_id',HOTEL_ID).maybeSingle();
+    const conf=Object.assign({},(st&&st.data)||{},{seed:SEED_TAG});
+    await SB.from('settings').upsert({hotel_id:HOTEL_ID,data:conf,updated_at:new Date().toISOString()},{onConflict:'hotel_id'});
+    seedDone=true;
+    lastSavedAt=conf.savedAt||Date.now();
+    lastFingerprint=dataFingerprint();
+    toast('Dastur tozalandi — 18.07.2026, 1 ta bron (514-xona) ✓',true);
+  }catch(e){ toast('Tozalashda xato: '+(e.message||''),false); }
 }
 
 function resetState(){
