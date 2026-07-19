@@ -1077,7 +1077,14 @@ function render(){
 /* ================= SHAXMATKA ================= */
 function shiftDate(d){ ganttStart=new Date(ganttStart.getTime()+d*DAY); document.getElementById('curDate').textContent=fmt(new Date(ganttStart.getTime()+DAY)); render(); }
 function gotoDate(val){ if(!val)return; const p=val.split('-'); ganttStart=new Date(+p[0],+p[1]-1,+p[2]-1); document.getElementById('curDate').textContent=fmt(new Date(ganttStart.getTime()+DAY)); render(); }
-function ganttDays(){ const arr=[]; for(let i=0;i<12;i++) arr.push(new Date(ganttStart.getTime()+i*DAY)); return arr; }
+/* Shaxmatkada nechta kun ko'rinadi — menejer/admin tanlaydi (7 / 12 / 21) */
+let GANTT_DAYS = (function(){ const v=+(localStorage.getItem('gdays')||7); return [7,12,21].includes(v)?v:7; })();
+function setGanttDays(n){
+  GANTT_DAYS=[7,12,21].includes(+n)?+n:7;
+  try{ localStorage.setItem('gdays',GANTT_DAYS); }catch(e){}
+  render();
+}
+function ganttDays(){ const arr=[]; for(let i=0;i<GANTT_DAYS;i++) arr.push(new Date(ganttStart.getTime()+i*DAY)); return arr; }
 
 // lane packing: assign each stay a lane within its room so same-day overlaps stack
 function hourFrac(t){ const m=(t||'').match(/(\d{1,2}):(\d{2})/); return m?((+m[1]*60+ +m[2])/1440):0; }
@@ -1114,20 +1121,45 @@ function stayEndMs(s){
 }
 /* --- QAVAT (lane) — VAQTI to'qnashmasa BIR qatorga (A variant) --- */
 function laneFor(room){
+  const MAXPERLANE=4;                 // bir qatorda ko'pi bilan 4 ta kunduzgi
   const active=stays.filter(s=>s.room===room && s.status!=='canceled')
                     .sort((a,b)=>stayStartMs(a)-stayStartMs(b));
   const canceled=stays.filter(s=>s.room===room && s.status==='canceled');
-  const laneEnds=[];   // har qavatning oxirgi band payti (ms)
-  active.forEach(s=>{
-    const st=stayStartMs(s), en=Math.max(stayEndMs(s), st+30*60000);
-    let placed=false;
-    for(let i=0;i<laneEnds.length;i++){
-      if(st>=laneEnds[i]-1000){ s._lane=i; laneEnds[i]=en; placed=true; break; }   // vaqti to'qnashmadi → shu qavatga
-    }
-    if(!placed){ s._lane=laneEnds.length; laneEnds.push(en); }
+
+  /* 1) KUNDUZGILAR — kun bo'yicha guruh, har qatorga 4 tadan */
+  const duList=active.filter(s=>isDayUse(s));
+  const duByDay={};
+  duList.forEach(s=>{ const k=ymd(s.inDate); (duByDay[k]=duByDay[k]||[]).push(s); });
+  let duLanes=0;
+  Object.keys(duByDay).forEach(k=>{
+    const arr=duByDay[k].sort((a,b)=>stayStartMs(a)-stayStartMs(b));
+    arr.forEach((s,i)=>{ s._lane=Math.floor(i/MAXPERLANE); });
+    duLanes=Math.max(duLanes,Math.ceil(arr.length/MAXPERLANE));
   });
-  canceled.forEach(s=>{ s._lane=laneEnds.length; });
-  return {list:active.concat(canceled),lanes:Math.max(1,laneEnds.length+(canceled.length?1:0))};
+
+  /* 2) ODDIY BRONLAR — vaqt bo'yicha joylashadi (kunduzgi bor kunlarda pastroqdan) */
+  const duDays=new Set(Object.keys(duByDay));
+  const laneEnds=[];
+  active.filter(s=>!isDayUse(s)).forEach(s=>{
+    const st=stayStartMs(s), en=Math.max(stayEndMs(s), st+30*60000);
+    // shu bron kunduzgi bor kunga tushsa — kunduzgi qavatlaridan pastda boshlaymiz
+    let minLane=0;
+    for(let d=stripTime(s.inDate).getTime(); d<=stripTime(s.outDate).getTime(); d+=DAY){
+      if(duDays.has(ymd(new Date(d)))){ minLane=duLanes; break; }
+    }
+    let placed=false;
+    for(let i=minLane;i<laneEnds.length;i++){
+      if(st>=(laneEnds[i]||0)-1000){ s._lane=i; laneEnds[i]=en; placed=true; break; }
+    }
+    if(!placed){
+      const idx=Math.max(minLane,laneEnds.length);
+      for(let q=laneEnds.length;q<idx;q++) laneEnds[q]=laneEnds[q]||0;
+      s._lane=idx; laneEnds[idx]=en;
+    }
+  });
+  const usedLanes=Math.max(duLanes, laneEnds.length);
+  canceled.forEach(s=>{ s._lane=usedLanes; });
+  return {list:active.concat(canceled),lanes:Math.max(1,usedLanes+(canceled.length?1:0))};
 }
 /* 0 narxli bron — check-out'dan keyin ABADIY qizil (shubhali belgi, iz o'chmaydi) */
 function isZeroPriceStay(s){
@@ -1191,22 +1223,37 @@ function renderGanttRows(){
       const turn=stays.some(x=>x.room===s.room && x.id!==s.id && x.status!=='canceled' && stripTime(x.outDate).getTime()===stripTime(s.inDate).getTime());
       const startInset=(turn&&!du)?0.55:0;
       if(du){
-        /* ⚠️ KUNDUZGI (day-use): chiziq HAQIQIY VAQTIGA qarab chiziladi.
-           Butun kunni egallamaydi — qolgan joyga yangi mehmon qo'shsa bo'ladi. */
+        /* KUNDUZGI (day-use): vaqti bilan belgilaymiz — quyida kun bo'yicha TENG bo'linadi */
         const t1=hhToFrac(s.arrTime)||0;
-        let t2=hhToFrac(s.checkoutTime);
-        if(t2==null||t2<=t1) t2=Math.min(1,t1+0.18);        // chiqish vaqti yo'q → taxminiy
-        const MINW=0.17;                                     // ism sig'sin
-        let L=dayIdx+t1, R=dayIdx+Math.max(t2,t1+MINW);
-        if(R>dayIdx+1){ R=dayIdx+1; L=Math.max(dayIdx,R-MINW); }   // kun chegarasidan chiqmasin
-        geo.push({s, L, R, du});
+        geo.push({s, L:dayIdx+t1, R:dayIdx+t1+0.05, du, dayIdx, t1});
       } else {
         geo.push({s, L:dayIdx-earlyF+startInset, R:dayIdx+span+coF+lateF, du});
       }
     });
-    // 2) BIR QAVATDA to'qnashib qolganlar bo'lsa — joyni teng bo'lib beramiz (A variant)
+
+    /* ══ 2) KUNDUZGILAR: har kunni TENG bo'lamiz (vaqt tartibida, bitta qatorda) ══
+       2 ta → 50% · 3 ta → 33% · 4 ta → 25% · 5+ bo'lsa qavat qo'shiladi */
+    const MAXPERLANE=4;                       // bir qatorga ko'pi bilan 4 ta (ism o'qilsin)
+    const duByDay={};
+    geo.forEach(g=>{ if(g.du){ (duByDay[g.dayIdx]=duByDay[g.dayIdx]||[]).push(g); } });
+    Object.keys(duByDay).forEach(k=>{
+      const arr=duByDay[k].sort((a,b)=>a.t1-b.t1);      // kelish vaqti bo'yicha
+      const di=+k;
+      const perLane=Math.min(MAXPERLANE,arr.length);
+      arr.forEach((g,i)=>{
+        const lane=Math.floor(i/MAXPERLANE);
+        const posInLane=i%MAXPERLANE;
+        const cntInLane=Math.min(MAXPERLANE,arr.length-lane*MAXPERLANE);
+        const w=1/cntInLane;
+        g.L=di+posInLane*w;
+        g.R=di+(posInLane+1)*w;
+        g.s._lane=lane;                                  // kerak bo'lsa pastki qavatga
+      });
+    });
+
+    /* ══ 3) Oddiy bronlar bir qavatda to'qnashsa — joyni bo'lamiz ══ */
     const byLane={};
-    geo.forEach(g=>{ const k=g.s._lane; (byLane[k]=byLane[k]||[]).push(g); });
+    geo.forEach(g=>{ if(!g.du){ const k=g.s._lane; (byLane[k]=byLane[k]||[]).push(g); } });
     Object.keys(byLane).forEach(k=>{
       const arr=byLane[k].sort((a,b)=>a.L-b.L);
       let i=0;
@@ -1214,7 +1261,7 @@ function renderGanttRows(){
         let j=i, maxR=arr[i].R;
         while(j+1<arr.length && arr[j+1].L < maxR-0.001){ j++; maxR=Math.max(maxR,arr[j].R); }
         const cnt=j-i+1;
-        if(cnt>1){                       // to'qnashgan guruh — teng bo'lamiz
+        if(cnt>1){
           const minL=arr[i].L, w=(maxR-minL)/cnt;
           for(let q=0;q<cnt;q++){ arr[i+q].L=minL+q*w; arr[i+q].R=minL+(q+1)*w; }
         }
@@ -1260,6 +1307,11 @@ function renderGanttShell(headCols, rowsHtml, days, ND){
     <div class="lg"><span class="sw" style="background:${statusColors.outdebt}"></span>Check-out (qarzli)</div>
     <div class="lg"><span class="sw" style="background:${statusColors.cancel}"></span>Bekor</div>
     <div class="lg" style="margin-left:auto;color:var(--txt-3)"><b>Ctrl+bosish</b> → guruh bron yoki guruh atmen</div>
+    <div class="seg" style="margin-left:10px" title="Shaxmatkada nechta kun ko'rinsin">
+      <button class="${GANTT_DAYS===7?'on':''}" onclick="setGanttDays(7)">7 kun</button>
+      <button class="${GANTT_DAYS===12?'on':''}" onclick="setGanttDays(12)">12</button>
+      <button class="${GANTT_DAYS===21?'on':''}" onclick="setGanttDays(21)">21</button>
+    </div>
     <button class="btn btn-ghost" style="padding:6px 11px;font-size:12px" onclick="printPage('Shaxmatka')">🖨 ${P('Chop etish')}</button>
   </div>
   <div class="gantt-wrap">
@@ -3927,6 +3979,7 @@ const SB_URL='https://bmycnlhryfwjihjxxshp.supabase.co';
 const SB_KEY='sb_publishable_FGaZYRcF0mewLes59vAJeQ_jvWAZxGP';
 const HOTEL_ID='grand_capital';
 let SB=null, cloudReady=false, saveTimer=null, syncTimer=null, lastSavedAt=0, cloudBusy=false, savePending=false, seedDone=false, serverSeedTag=null;
+let cloudLoadedOK=false;   // ⚠️ birinchi muvaffaqiyatli yuklashsiz SAQLAMAYMIZ (ma'lumot yo'qolmasin)
 
 // Supabase mijozini ishga tushiramiz
 try{
@@ -3996,6 +4049,7 @@ async function cloudLoad(){
     // ⚠️ BIR MARTALIK TOZA START (yangi versiyaga o'tishda)
     serverSeedTag=d.seed||null;
     serverSeedTag=d.seed||null;
+    cloudLoadedOK=true;               // serverdan o'qildi — endi saqlash xavfsiz
     if(d.seed===SEED_TAG){ seedDone=true; } else { await seedCleanStart(); }
     cloudBadge('☁️ Ma\'lumot yuklandi ✓',true);
     return true;
@@ -4009,6 +4063,7 @@ async function cloudLoad(){
 /* --- SERVERGA SAQLASH (o'zgarish bo'lganda, 1.2s kechikish bilan) --- */
 async function cloudSave(){
   if(!SB||cloudBusy) return;
+  if(!cloudLoadedOK){ cloudBadge('⏳ Serverdan yuklanmadi — saqlanmadi',false); return; }   // ⚠️ yuklanmasa — YOZMAYMIZ
   cloudBusy=true;
   try{
     // 1) mehmonlar — hammasini yangilaymiz (upsert)
