@@ -187,6 +187,11 @@ h1,h2,h3,h4{font-family:'Space Grotesk',Inter,sans-serif;font-weight:600;letter-
 .g-cell{border-right:1px solid var(--line);position:relative;display:flex;align-items:flex-start;justify-content:center}
 .g-cell.today{background:#f5f9ff}
 .g-cell.past{background:repeating-linear-gradient(45deg,#f4f6fa,#f4f6fa 6px,#eef1f6 6px,#eef1f6 12px);cursor:not-allowed}
+/* 🔧 Yopiq xona (ta'mir) — jigarrang, qiyshiq chiziqli */
+.g-cell.g-blocked{background:repeating-linear-gradient(45deg,#7b4a2d,#7b4a2d 7px,#8d5836 7px,#8d5836 14px);cursor:not-allowed;opacity:.9}
+html.dark .g-cell.g-blocked{background:repeating-linear-gradient(45deg,#5c3721,#5c3721 7px,#6d422a 7px,#6d422a 14px)}
+.g-label .blockbtn{border:none;background:transparent;cursor:pointer;font-size:13px;opacity:.35;padding:0 3px;transition:.15s}
+.g-label .blockbtn:hover{opacity:1;transform:scale(1.15)}
 .g-cell.addable{cursor:pointer}
 .g-cell.addable:hover{background:#eef4ff}
 .g-cell .addhint{color:var(--brand);opacity:0;font-weight:700;margin-top:4px;font-size:14px}
@@ -951,7 +956,194 @@ function typeLabel(k){return (TYPE_LABELS[LANG]&&TYPE_LABELS[LANG][k])||TYPE_LAB
 /* har bir tur uchun standart 1 kunlik tarif (hotel sozlamada o'zgartiradi) */
 let typeRates={std:400000,twin:500000,dlx:700000,lux:1200000};
 /* holat ranglari — hotel sozlamalarda o'zi tanlaydi */
-let statusColors={book:'#e0900e',in:'#38a8e0',paid:'#188a4a',partial:'#2563eb',out:'#2b3446',cancel:'#6d28d9',outdebt:'#dc2626'};
+let statusColors={book:'#e0900e',in:'#38a8e0',paid:'#188a4a',partial:'#2563eb',out:'#2b3446',cancel:'#6d28d9',outdebt:'#dc2626',blocked:'#7b4a2d'};
+/* ═══════ SMENA YOPISH — naqd sanash + terminal solishtiruvi ═══════
+   Faqat SOLISHTIRADI. To'lovlarga, balansga, kassa hisobotiga TEGMAYDI. */
+let shifts=[];        // {id, day, cashExpect, cashReal, cardExpect, cardReal, by, at, note}
+let shiftState=null;
+
+/* Shu kunga dastur bo'yicha naqd va karta (vozvrat ayirilgan) */
+function shiftExpected(dayStr){
+  let cash=0, card=0;
+  stays.forEach(s=>(s.payments||[]).forEach(p=>{
+    const d=p.ts?ymd(new Date(p.ts)):null; if(d!==dayStr) return;
+    const sign=(p.type==='ref')?-1:1;
+    if(p.method==='naxt') cash+=sign*p.amount;
+    else if(p.method==='karta') card+=sign*p.amount;
+  }));
+  return {cash,card};
+}
+/* Farqning SABABINI matn qilib qaytaradi (jurnalga va hisobotga yoziladi) */
+function shiftReason(dCash,dCard){
+  const T=1000;
+  if(Math.abs(dCash)<=T && Math.abs(dCard)<=T) return 'Farq yo\'q — hammasi to\'g\'ri';
+  if(dCash<-T && dCard>T && Math.abs(dCash+dCard)<=T)
+    return `KARTA to'lovi "NAXT" deb yozilgan — naqd ${money(-dCash)} kam, karta ${money(dCard)} ortiq`;
+  if(dCash>T && dCard<-T && Math.abs(dCash+dCard)<=T)
+    return `NAQD to'lovi "KARTA" deb yozilgan — naqd ${money(dCash)} ortiq, karta ${money(-dCard)} kam`;
+  const p=[];
+  if(dCash<-T) p.push(`Kassada ${money(-dCash)} YETMAYAPTI`);
+  if(dCash>T)  p.push(`Kassada ${money(dCash)} ORTIQCHA — yozilmagan to'lov bormi?`);
+  if(dCard<-T) p.push(`Terminal ${money(-dCard)} kam — ortiqcha karta yozilgan`);
+  if(dCard>T)  p.push(`Terminal ${money(dCard)} ortiq — karta to'lovi kiritilmagan`);
+  return p.join(' · ')||'Farq bor';
+}
+function openShiftModal(){
+  if(role!=='admin'&&role!=='manager'){ toast('Ruxsat yo\'q.',false); return; }
+  const e=shiftExpected(ymd(base));
+  shiftState={day:ymd(base),cashExpect:e.cash,cardExpect:e.card,cashReal:'',cardReal:'',note:''};
+  drawShiftModal();
+}
+function drawShiftModal(){
+  const x=shiftState; if(!x) return;
+  const old=document.getElementById('shiftOverlay'); if(old) old.remove();
+  const cashR=x.cashReal===''?null:+x.cashReal, cardR=x.cardReal===''?null:+x.cardReal;
+  const dCash=cashR===null?null:cashR-x.cashExpect;
+  const dCard=cardR===null?null:cardR-x.cardExpect;
+  let xulosa='';
+  if(dCash!==null&&dCard!==null){
+    if(dCash===0&&dCard===0) xulosa=`<div style="background:var(--green-bg);color:var(--green-ink);padding:11px 13px;border-radius:9px;font-weight:600">✓ Hammasi to'g'ri — farq yo'q</div>`;
+    else{
+      let sabab='';
+      if(dCash<0&&dCard>0&&Math.abs(dCash+dCard)<1000)
+        sabab=`<div style="margin-top:7px;font-weight:700">⚠️ KARTA to'lovi "NAXT" deb yozilgan!</div><div style="font-size:12px">Naqd ${money(-dCash)} kam, karta ${money(dCard)} ortiq — bir xil summa.</div>`;
+      else if(dCash>0&&dCard<0&&Math.abs(dCash+dCard)<1000)
+        sabab=`<div style="margin-top:7px;font-weight:700">⚠️ NAQD to'lovi "KARTA" deb yozilgan!</div>`;
+      else if(dCash<0) sabab=`<div style="margin-top:7px;font-weight:700">⚠️ Kassada ${money(-dCash)} YETMAYAPTI</div>`;
+      else if(dCash>0) sabab=`<div style="margin-top:7px;font-weight:700">⚠️ Kassada ${money(dCash)} ORTIQCHA — yozilmagan to'lov bormi?</div>`;
+      xulosa=`<div style="background:var(--red-bg);color:var(--red-ink);padding:11px 13px;border-radius:9px">🚨 FARQ TOPILDI${sabab}</div>`;
+    }
+  }
+  const row=(nom,exp,val,fld,dif)=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
+      <div style="flex:1;min-width:130px;font-size:13px;font-weight:600">${nom}</div>
+      <div style="min-width:120px;text-align:right;font-size:13px;color:var(--txt-2)">${money(exp)}</div>
+      <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any"
+        value="${val}" oninput="shiftState.${fld}=this.value;drawShiftModal()" placeholder="sanang..."
+        style="width:140px;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;text-align:right">
+      <div style="min-width:120px;text-align:right;font-weight:700;color:${dif===null?'var(--txt-3)':(dif===0?'var(--green-ink)':'var(--red-ink)')}">
+        ${dif===null?'—':(dif===0?'✓ teng':(dif>0?'+':'')+money(dif))}</div>
+    </div>`;
+  const html=`<div class="overlay" id="shiftOverlay">
+    <div class="modal" style="max-width:660px">
+      <div class="modal-h"><h3>💵 Smenani yopish — ${fmt(base)}</h3><button class="x" onclick="closeShiftModal()">✕</button></div>
+      <div class="modal-b">
+        <div class="mini-hint" style="padding:0 0 10px;line-height:1.55">Kassadagi <b>haqiqiy pulni sanang</b> va terminal hisobotidagi summani yozing. Dastur solishtiradi.<br>
+          <b>Bu amal to'lovlarga, balansga va kassa hisobotiga tegmaydi</b> — faqat tekshiruv.</div>
+        <div style="display:flex;gap:10px;padding:0 0 4px;font-size:11px;color:var(--txt-3);flex-wrap:wrap">
+          <div style="flex:1;min-width:130px"></div><div style="min-width:120px;text-align:right">DASTUR</div>
+          <div style="width:140px;text-align:right">HAQIQATDA</div><div style="min-width:120px;text-align:right">FARQ</div></div>
+        ${row('💵 Naqd (yashikda)',x.cashExpect,x.cashReal,'cashReal',dCash)}
+        ${row('💳 Karta (terminal)',x.cardExpect,x.cardReal,'cardReal',dCard)}
+        <div class="field" style="margin-top:12px"><label>Izoh (ixtiyoriy)</label>
+          <textarea rows="2" oninput="shiftState.note=this.value" placeholder="Masalan: mehmon 50 000 ni ertaga to'laydi...">${x.note}</textarea></div>
+        ${xulosa}
+      </div>
+      <div class="modal-f"><button class="btn btn-ghost" onclick="closeShiftModal()">Bekor</button>
+        <button class="btn btn-primary" onclick="commitShift()">💾 Smenani yopish</button></div>
+    </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function closeShiftModal(){ shiftState=null; const el=document.getElementById('shiftOverlay'); if(el) el.remove(); }
+function commitShift(){
+  const x=shiftState; if(!x) return;
+  if(x.cashReal===''||x.cardReal===''){ toast('Naqd va karta summasini kiriting.',false); return; }
+  const cashR=+x.cashReal, cardR=+x.cardReal;
+  const dCash=cashR-x.cashExpect, dCard=cardR-x.cardExpect;
+  const rec={id:'sh'+Date.now().toString(36),day:x.day,cashExpect:x.cashExpect,cashReal:cashR,
+    cardExpect:x.cardExpect,cardReal:cardR,dCash,dCard,note:(x.note.trim()||shiftReason(dCash,dCard)),diagnoz:shiftReason(dCash,dCard),
+    by:role==='admin'?'Administrator':'Menejer',at:uzTime()+' · '+fmtShort(base)};
+  shifts.unshift(rec); if(shifts.length>400) shifts.length=400;
+  const farq=(dCash!==0||dCard!==0);
+  auditLog.unshift({room:'—',guest:'—',type:farq?'warn':'out',
+    text:farq?`🚨 SMENA FARQI: naqd ${dCash>0?'+':''}${money(dCash)} · karta ${dCard>0?'+':''}${money(dCard)} — ${shiftReason(dCash,dCard)}`
+              :`✓ SMENA YOPILDI — farq yo'q (naqd ${money(cashR)}, karta ${money(cardR)})`,
+    amount:0,reason:(x.note.trim()||shiftReason(dCash,dCard)),by:rec.by,time:uzTime()+' · '+fmtShort(base),day:ymd(base)});
+  if(typeof cloudLogPush==='function') cloudLogPush(auditLog[0]);
+  closeShiftModal(); lastFingerprint=''; saveState(); render(); buildNav();
+  toast(farq?'Smena yopildi — FARQ bor, nazoratga yozildi 🚨':'Smena yopildi — farq yo\'q ✓',!farq);
+}
+
+/* ===== XONA YOPISH (ta'mir / tozalash) ===== */
+let roomBlocks=[];   // {id, room, from:'YYYY-MM-DD', to:'YYYY-MM-DD', reason, by, at}
+function blocksForRoom(room){ return roomBlocks.filter(b=>b.room===room); }
+function isRoomBlocked(room,d){
+  const k=ymd(d);
+  return roomBlocks.find(b=>b.room===room && k>=b.from && k<=b.to) || null;
+}
+/* Berilgan davrda xona yopiqmi? (bron ochishda tekshiramiz) */
+function blockConflict(room,inD,outD){
+  const a=ymd(stripTime(inD)), b=ymd(new Date(stripTime(outD).getTime()-DAY));
+  return roomBlocks.find(x=>x.room===room && !(x.to<a || x.from>(b<a?a:b))) || null;
+}
+function openBlockModal(room){
+  if(role!=='admin'&&role!=='manager'){ toast('Ruxsat yo\'q.',false); return; }
+  blockState={room, from:ymd(base), to:ymd(new Date(base.getTime()+2*DAY)), reason:''};
+  drawBlockModal();
+}
+let blockState=null;
+function drawBlockModal(){
+  const b=blockState; if(!b) return;
+  const old=document.getElementById('blockOverlay'); if(old) old.remove();
+  const existing=blocksForRoom(b.room);
+  const html=`<div class="overlay" id="blockOverlay">
+    <div class="modal" style="max-width:520px">
+      <div class="modal-h"><h3>🔧 Xona ${b.room} — yopish (ta'mir/tozalash)</h3>
+        <button class="x" onclick="closeBlockModal()">✕</button></div>
+      <div class="modal-b">
+        <div class="mini-hint" style="padding:0 0 10px">Yopilgan xonaga bron ochib bo'lmaydi. Bandlik foiziga kirmaydi. Amal nazoratga yoziladi.</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <div class="field" style="flex:1;min-width:150px"><label>Qaysi kundan</label>
+            <input type="date" value="${b.from}" onchange="blockState.from=this.value;drawBlockModal()"></div>
+          <div class="field" style="flex:1;min-width:150px"><label>Qaysi kungacha</label>
+            <input type="date" value="${b.to}" onchange="blockState.to=this.value;drawBlockModal()"></div>
+        </div>
+        <div class="field"><label>Sabab (majburiy)</label>
+          <textarea rows="2" oninput="blockState.reason=this.value" placeholder="Masalan: konditsioner buzilgan, ta'mir qilinmoqda...">${b.reason}</textarea></div>
+        ${existing.length?`<div style="margin-top:6px"><div style="font-size:12px;font-weight:600;margin-bottom:6px">Hozirgi yopilishlar:</div>
+          ${existing.map(x=>`<div class="arr-item" style="border-left:4px solid ${statusColors.blocked}">
+            <div class="who"><b>${x.from.split('-').reverse().join('.')} — ${x.to.split('-').reverse().join('.')}</b><span>${x.reason} · ${x.by} · ${x.at}</span></div>
+            <div class="meta"><button class="btn btn-ghost" style="padding:6px 10px;font-size:12px" onclick="unblockRoom('${x.id}')">✓ Ochish</button></div></div>`).join('')}
+        </div>`:''}
+      </div>
+      <div class="modal-f"><button class="btn btn-ghost" onclick="closeBlockModal()">Yopish</button>
+        <button class="btn btn-primary" onclick="commitBlock()">🔧 Xonani yopish</button></div>
+    </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function closeBlockModal(){ blockState=null; const el=document.getElementById('blockOverlay'); if(el) el.remove(); }
+function commitBlock(){
+  const b=blockState; if(!b) return;
+  if(!b.reason.trim()){ toast('Sababni yozing (majburiy).',false); return; }
+  if(b.to<b.from){ toast('Tugash sanasi boshlanishdan oldin bo\'lmasin.',false); return; }
+  // shu davrda bron bormi?
+  const A=new Date(+b.from.split('-')[0],+b.from.split('-')[1]-1,+b.from.split('-')[2]);
+  const B=new Date(+b.to.split('-')[0],+b.to.split('-')[1]-1,+b.to.split('-')[2]);
+  const busy=stays.find(x=>x.room===b.room && (x.status==='in'||x.status==='book') &&
+    stripTime(x.inDate).getTime()<=B.getTime() && stripTime(x.outDate).getTime()>A.getTime());
+  if(busy){ toast(`Bu davrda ${busy.firstName} ${busy.lastName} bor — avval uni ko'chiring yoki chiqaring.`,false); return; }
+  const id='blk'+Date.now().toString(36);
+  roomBlocks.push({id,room:b.room,from:b.from,to:b.to,reason:b.reason.trim(),
+    by:role==='admin'?'Administrator':'Menejer', at:uzTime()+' · '+fmtShort(base)});
+  auditLog.unshift({room:b.room,guest:'—',type:'warn',
+    text:`🔧 XONA YOPILDI (ta'mir): ${b.from.split('-').reverse().join('.')} — ${b.to.split('-').reverse().join('.')}`,
+    amount:0,reason:b.reason.trim(),by:role==='admin'?'Administrator':'Menejer',
+    time:uzTime()+' · '+fmtShort(base),day:ymd(base)});
+  if(typeof cloudLogPush==='function') cloudLogPush(auditLog[0]);
+  closeBlockModal(); lastFingerprint=''; saveState(); render(); buildNav();
+  toast(`Xona ${b.room} yopildi 🔧`,true);
+}
+function unblockRoom(id){
+  const b=roomBlocks.find(x=>x.id===id); if(!b) return;
+  roomBlocks=roomBlocks.filter(x=>x.id!==id);
+  auditLog.unshift({room:b.room,guest:'—',type:'warn',
+    text:`✓ XONA OCHILDI (ta'mir tugadi): ${b.from.split('-').reverse().join('.')} — ${b.to.split('-').reverse().join('.')}`,
+    amount:0,reason:b.reason,by:role==='admin'?'Administrator':'Menejer',
+    time:uzTime()+' · '+fmtShort(base),day:ymd(base)});
+  if(typeof cloudLogPush==='function') cloudLogPush(auditLog[0]);
+  lastFingerprint=''; saveState(); drawBlockModal(); render();
+  toast(`Xona ${b.room} ochildi ✓`,true);
+}
 const COLOR_PALETTE=['#188a4a','#22a55b','#0ea5e9','#2563eb','#6d28d9','#7c3aed','#db2777','#d32f2f','#dc2626','#e0900e','#f59e0b','#0d9488','#475569','#2b3446','#111827'];
 
 /* ================= NAV ================= */
@@ -1095,6 +1287,9 @@ function hhToFrac(hhmm){
   return Math.min(0.999,(+m[1]*60 + +m[2])/1440);
 }
 function isDayUse(s){ return Math.round((stripTime(s.outDate)-stripTime(s.inDate))/DAY)===0; }
+/* Chiqib ketgan kunduzgi — kun ichida ¼ chorak bo'ladi.
+   Hali chiqmagani (qachon ketishi noma'lum) — keyingi kunga o'tib turadi. */
+function isDayUseOut(s){ return isDayUse(s) && s.status==='out'; }
 function startFrac(s){ return (stripTime(s.inDate)-ganttStart)/DAY + hourFrac(s.arrTime||'14:00'); }
 function endFrac(s){
   let e=(stripTime(s.outDate)-ganttStart)/DAY + hourFrac(outTimeOf(s));
@@ -1127,7 +1322,7 @@ function laneFor(room){
   const canceled=stays.filter(s=>s.room===room && s.status==='canceled');
 
   /* 1) KUNDUZGILAR — kun bo'yicha guruh, har qatorga 4 tadan */
-  const duList=active.filter(s=>isDayUse(s));
+  const duList=active.filter(s=>isDayUseOut(s));
   const duByDay={};
   duList.forEach(s=>{ const k=ymd(s.inDate); (duByDay[k]=duByDay[k]||[]).push(s); });
   let duLanes=0;
@@ -1140,7 +1335,7 @@ function laneFor(room){
   /* 2) ODDIY BRONLAR — vaqt bo'yicha joylashadi (kunduzgi bor kunlarda pastroqdan) */
   const duDays=new Set(Object.keys(duByDay));
   const laneEnds=[];
-  active.filter(s=>!isDayUse(s)).forEach(s=>{
+  active.filter(s=>!isDayUseOut(s)).forEach(s=>{
     const st=stayStartMs(s), en=Math.max(stayEndMs(s), st+30*60000);
     // shu bron kunduzgi bor kunga tushsa — kunduzgi qavatlaridan pastda boshlaymiz
     let minLane=0;
@@ -1206,6 +1401,11 @@ function renderGanttRows(){
     let cells='';
     days.forEach((d,ci)=>{
       const past=d.getTime()<base.getTime();
+      const blk=isRoomBlocked(rm.n,d);
+      if(blk){
+        cells+=`<div class="g-cell g-blocked ${ci===todayIdx?'today':''}" title="🔧 Yopiq: ${blk.reason} (${blk.by})"></div>`;
+        return;
+      }
       const cls='g-cell '+(ci===todayIdx?'today ':'')+(past?'past':'addable');
       const attr=past?'':`data-add="${rm.n}|${d.getTime()}"`;
       cells+=`<div class="${cls}" ${attr}>${past?'':'<span class="addhint">+</span>'}</div>`;
@@ -1222,10 +1422,14 @@ function renderGanttRows(){
       const earlyF=s.earlyIn?0.35:0, lateF=s.lateOut?0.5:0;
       const turn=stays.some(x=>x.room===s.room && x.id!==s.id && x.status!=='canceled' && stripTime(x.outDate).getTime()===stripTime(s.inDate).getTime());
       const startInset=(turn&&!du)?0.55:0;
-      if(du){
-        /* KUNDUZGI (day-use): vaqti bilan belgilaymiz — quyida kun bo'yicha TENG bo'linadi */
+      if(du && s.status==='out'){
+        /* CHIQIB KETGAN kunduzgi — quyida kun bo'yicha ¼ ga bo'linadi */
         const t1=hhToFrac(s.arrTime)||0;
-        geo.push({s, L:dayIdx+t1, R:dayIdx+t1+0.05, du, dayIdx, t1});
+        geo.push({s, L:dayIdx+t1, R:dayIdx+t1+0.05, du:true, dayIdx, t1});
+      } else if(du){
+        /* HALI CHIQMAGAN kunduzgi — qachon ketishi noma'lum → keyingi kunga o'tib turadi */
+        const t1=hhToFrac(s.arrTime)||0;
+        geo.push({s, L:dayIdx+Math.min(t1,0.6), R:dayIdx+1+0.42, du:false});
       } else {
         geo.push({s, L:dayIdx-earlyF+startInset, R:dayIdx+span+coF+lateF, du});
       }
@@ -1244,7 +1448,7 @@ function renderGanttRows(){
         const lane=Math.floor(i/MAXPERLANE);
         const posInLane=i%MAXPERLANE;
         const cntInLane=Math.min(MAXPERLANE,arr.length-lane*MAXPERLANE);
-        const w=1/cntInLane;
+        const w=1/MAXPERLANE;          // har kunduzgi DOIM kunning ¼ qismi (1 ta bo'lsa ham)
         g.L=di+posInLane*w;
         g.R=di+(posInLane+1)*w;
         g.s._lane=lane;                                  // kerak bo'lsa pastki qavatga
@@ -1288,7 +1492,7 @@ function renderGanttRows(){
       bars+=`<div class="resv ${sc.cls}" style="${sc.style};top:${btop}px;left:calc(${leftPct}% + 3px);width:calc(${widPct}% - 7px);height:${bh}px;line-height:${bh-2}px;${cancl?'font-size:9px;opacity:.85;':''}" data-id="${s.id}" title="${s.firstName} ${s.lastName}${dun}${badges?' · '+badges:''}${cancl?' · bekor qilingan':''}${s.corrected?' · tuzatilgan':''}">${label}${badges}${corr}</div>`;
     });
     rowsHtml+=`<div class="g-row" style="height:${rowH}px">
-      <div class="g-label"><b>${rm.n}</b><span>${typeLabel(rm.t)}</span></div>
+      <div class="g-label"><b>${rm.n}</b>${(role==='admin'||role==='manager')?`<button class="blockbtn" title="Xonani yopish (ta'mir)" onclick="event.stopPropagation();openBlockModal('${rm.n}')">🔧</button>`:''}<span>${typeLabel(rm.t)}${blocksForRoom(rm.n).length?' <span style="color:'+statusColors.blocked+';font-weight:700">· yopiq</span>':''}</span></div>
       <div class="g-track" data-room="${rm.n}" style="grid-template-columns:repeat(${ND},1fr)">${cells}<div class="g-bars">${bars}</div></div>
     </div>`;
   });
@@ -1306,6 +1510,7 @@ function renderGanttShell(headCols, rowsHtml, days, ND){
     <div class="lg"><span class="sw" style="background:${statusColors.out}"></span>Check-out</div>
     <div class="lg"><span class="sw" style="background:${statusColors.outdebt}"></span>Check-out (qarzli)</div>
     <div class="lg"><span class="sw" style="background:${statusColors.cancel}"></span>Bekor</div>
+    <div class="lg"><span class="sw" style="background:repeating-linear-gradient(45deg,#7b4a2d,#7b4a2d 4px,#8d5836 4px,#8d5836 8px)"></span>🔧 Ta'mirda</div>
     <div class="lg" style="margin-left:auto;color:var(--txt-3)"><b>Ctrl+bosish</b> → guruh bron yoki guruh atmen</div>
     <div class="seg" style="margin-left:10px" title="Shaxmatkada nechta kun ko'rinsin">
       <button class="${GANTT_DAYS===7?'on':''}" onclick="setGanttDays(7)">7 kun</button>
@@ -1414,6 +1619,8 @@ let dragStayId=null;
 function dropMoveRoom(id,room){
   const s=stays.find(x=>x.id===id); if(!s||!room||s.room===room)return;
   if(role==='owner')return;
+  { const _bd=typeof blockConflict==='function'?blockConflict(room,s.inDate,s.outDate):null;
+    if(_bd){ toast(`Xona ${room} YOPIQ (${_bd.reason}).`,false); render(); return; } }
   if(!can('moveRoom',s)){ toast('Bu bron joriy kunga tegishli emas — xonani faqat menejer ko\'chiradi.',false); render(); return; }
   const clash=stays.some(x=>x.id!==id && x.room===room && x.status!=='canceled' && stripTime(x.inDate)<stripTime(s.outDate) && stripTime(x.outDate)>stripTime(s.inDate));
   if(clash){ toast(room+'-xona bu sanalarda band.',false); return; }
@@ -1654,6 +1861,10 @@ function closeReg(){const o=document.getElementById('regOverlay');if(o)o.remove(
 function saveReg(status){
   const r=regState, g=r.guests[0];
   if(!g.firstName||!g.lastName){toast('Asosiy mehmon ism-familiyasini kiriting.',false);return;}
+  {
+    const _bd=typeof blockConflict==='function'?blockConflict(r.room,r.date,new Date(stripTime(r.date).getTime()+Math.max(1,r.nights)*DAY)):null;
+    if(_bd){ toast(`Xona ${r.room} bu kunlarda YOPIQ (${_bd.reason}). Boshqa xona tanlang.`,false); return; }
+  }
   if(r.nightly===''||r.nightly===null||r.nightly===undefined||isNaN(+r.nightly)){toast('1 kunlik xona narxini kiriting (bepul bo\'lsa 0 yozing).',false);return;}
   if(+r.nightly<0){toast('Narx manfiy bo\'lishi mumkin emas.',false);return;}
   const stamp=fmtShort(base)+' '+r.arrTime;
@@ -2832,6 +3043,8 @@ function shubhaList(){
     else if(/BRON BEKOR QILINDI/i.test(txt)){ lvl='high'; why='Yashagan mehmon bekor qilindi'; }
     else if(/narx/i.test(txt) && /o'zgar|korreksiya|→/i.test(txt)){ lvl='high'; why='Narx o\'zgartirildi'; }
     else if(/NARXI 0/i.test(txt)){ lvl='high'; why='0 narxli bron — bepul yashadi?'; }
+    else if(/SMENA FARQI/i.test(txt)){ lvl='high'; why='Kassada farq — pul yetmayapti yoki usul almashtirilgan'; }
+    else if(/XONA YOPILDI/i.test(txt)){ lvl='mid'; why='Xona ta\'mirga yopildi — sotilmaydi'; }
     // 🟡 O'RTA XAVF
     else if(/HISOBDAN OLIB TASHLANDI|HISOBDAN CHEGIRILDI/i.test(txt)){ lvl='mid'; why='Hisobdan summa olib tashlandi'; }
     else if(/Bron o'chirildi/i.test(txt)){ lvl='mid'; why='Bron o\'chirildi'; }
@@ -3331,7 +3544,9 @@ function metrics(){
   const debt=debtStays.reduce((a,s)=>a+balance(s),0);
   const arrivals=stays.filter(s=>s.status==='book' && stripTime(s.inDate).getTime()===base.getTime());
   const departures=stays.filter(s=>(s.status==='in') && stripTime(s.outDate).getTime()===base.getTime());
-  return {occRooms,occ:occRooms.length,pct:Math.round(occRooms.length/rooms.length*100),
+  const _blocked=rooms.filter(r=>isRoomBlocked(r.n,base)).length;
+  const _avail=Math.max(1,rooms.length-_blocked);   // yopiq xonalar bandlikka kirmaydi
+  return {occRooms,occ:occRooms.length,blocked:_blocked,pct:Math.round(occRooms.length/_avail*100),
     paid,refunds,cash,card,debt,debtStays,arrivals,departures};
 }
 function roomStateToday(rn){
@@ -3510,7 +3725,26 @@ function renderTolov(){
   const tab=(k,l)=>`<button class="${payFilter===k?'on':''}" onclick="setPayFilter('${k}')">${l}</button>`;
   const pbtn=(k,l)=>`<button class="${payPeriod.mode===k?'on':''}" onclick="setPeriod('${k}')">${l}</button>`;
 
-  return `
+  /* Smena yopish paneli */
+  const bugungiSmena=shifts.find(x=>x.day===ymd(base));
+  const shiftPanel=`
+  <div class="panel" style="margin-bottom:14px"><div class="panel-h"><h3>💵 Smena — kassani tekshirish</h3><span class="spacer"></span>
+    ${bugungiSmena?`<span class="tag ${(bugungiSmena.dCash||bugungiSmena.dCard)?'':'paid'}" style="${(bugungiSmena.dCash||bugungiSmena.dCard)?'background:var(--red-bg);color:var(--red-ink)':''}">${(bugungiSmena.dCash||bugungiSmena.dCard)?'🚨 Farq bor':'✓ Yopilgan'}</span>`:''}
+    <button class="btn btn-primary" style="padding:8px 16px;font-size:13px;margin-left:8px" onclick="openShiftModal()">
+      ${bugungiSmena?'🔄 Qayta tekshirish':'💵 Smenani yopish'}</button></div>
+    <div class="mini-hint" style="padding:9px 16px;line-height:1.55">Kun oxirida kassadagi <b>haqiqiy naqd pulni</b> sanang va <b>terminal hisobotini</b> kiriting — dastur solishtiradi.</div>
+    ${shifts.length?`<table class="data"><thead><tr><th>Kun</th><th>Naqd: dastur</th><th>Naqd: haqiqatda</th><th>Karta: dastur</th><th>Karta: terminal</th><th>Natija</th><th>Kim</th></tr></thead><tbody>
+      ${shifts.slice(0,10).map(x=>{
+        const bad=(x.dCash||x.dCard);
+        return `<tr${bad?' style="background:var(--red-bg)"':''}>
+          <td><b>${x.day.split('-').reverse().join('.')}</b></td>
+          <td class="money">${money(x.cashExpect)}</td><td class="money">${money(x.cashReal)}</td>
+          <td class="money">${money(x.cardExpect)}</td><td class="money">${money(x.cardReal)}</td>
+          <td>${bad?`<b style="color:var(--red-ink)">naqd ${x.dCash>0?'+':''}${money(x.dCash)} · karta ${x.dCard>0?'+':''}${money(x.dCard)}</b>`:'<span style="color:var(--green-ink)">✓ teng</span>'}</td>
+          <td style="white-space:nowrap">${/admin/i.test(x.by)?`<b style="color:var(--red-ink)">${x.by}</b>`:x.by}</td></tr>`;
+      }).join('')}</tbody></table>`:''}
+  </div>`;
+  return shiftPanel + `
   <div class="panel"><div class="panel-h" style="flex-wrap:wrap;gap:10px">
     <h3>${P("Davr")}</h3>
     <div class="seg">${pbtn('today','Bugun')}${pbtn('week','7 kun')}${pbtn('month','Bu oy')}${pbtn('year','Bu yil')}</div>
@@ -3888,7 +4122,8 @@ function renderKunlik(){
   const yashab=stays.filter(s=>s.status!=='canceled' && stripTime(s.inDate).getTime()<=dayMs
     && stripTime(s.checkoutDate||s.outDate).getTime()>dayMs);
   const bandXona=new Set(yashab.map(s=>s.room)).size;
-  const bandPct=rooms.length?Math.round(bandXona/rooms.length*100):0;
+  const _blk=rooms.filter(r=>isRoomBlocked(r.n,base)).length;
+  const bandPct=rooms.length?Math.round(bandXona/Math.max(1,rooms.length-_blk)*100):0;
   const qarzdor=stays.filter(s=>s.status!=='canceled' && balance(s)>0
     && stripTime(s.inDate).getTime()<=dayMs);
   const qarzJami=qarzdor.reduce((a,s)=>a+balance(s),0);
@@ -4031,6 +4266,8 @@ async function cloudLoad(){
     ganttStart=new Date(base.getTime()-2*DAY);
     if(d.ackedShubha) ackedShubha=d.ackedShubha;
     if(d.auditHistory) auditHistory=d.auditHistory;
+    if(d.roomBlocks) roomBlocks=d.roomBlocks;
+    if(d.shifts) shifts=d.shifts;
     if(d.rooms) rooms=d.rooms;
     if(d.typeRates) typeRates=d.typeRates;
     if(d.hotelCfg) hotelCfg=d.hotelCfg;
@@ -4080,7 +4317,7 @@ async function cloudSave(){
     // 2) sozlamalar
     const conf={ savedAt:Date.now(), base:base.getTime(), ganttStart:ganttStart.getTime(),
       rooms, typeRates, hotelCfg, companies, companyData, statChannels, channels,
-      pendingBookings, emArchive, emehmonTolerance, usdRate, LANG, statusColors, ackedShubha, auditHistory,
+      pendingBookings, emArchive, emehmonTolerance, usdRate, LANG, statusColors, ackedShubha, auditHistory, roomBlocks, shifts,
       seed:(seedDone?SEED_TAG:serverSeedTag)||undefined };   // yuklanmagan bo'lsa ham belgini o'chirmaymiz
     const {error:e2}=await SB.from('settings').upsert({hotel_id:HOTEL_ID,data:conf,updated_at:new Date().toISOString()},{onConflict:'hotel_id'});
     if(e2) throw e2;
