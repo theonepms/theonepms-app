@@ -1154,7 +1154,17 @@ function unblockRoom(id){
   toast(`Xona ${b.room} ochildi ✓`,true);
 }
 /* ===== XONAGA O'NG TUGMA — kontekst menyu ===== */
-function closeRoomCtx(){ const m=document.getElementById('roomCtx'); if(m) m.remove(); }
+function closeRoomCtx(){
+  const m=document.getElementById('roomCtx');
+  if(m) m.remove();
+  document.removeEventListener('click',_roomCtxDismiss,true);
+  document.removeEventListener('contextmenu',_roomCtxDismiss,true);
+}
+function _roomCtxDismiss(e){
+  const m=document.getElementById('roomCtx');
+  if(m && m.contains(e.target)) return;   // menyu ichi — tegmaymiz
+  closeRoomCtx();
+}
 function roomCtxMenu(e,room,timeMs){
   e.preventDefault();
   if(role==='owner') return;
@@ -1178,7 +1188,10 @@ function roomCtxMenu(e,room,timeMs){
     if(r.right>innerWidth)  menu.style.left=Math.max(6,innerWidth-r.width-8)+'px';
     if(r.bottom>innerHeight) menu.style.top=Math.max(6,innerHeight-r.height-8)+'px';
   });
-  setTimeout(()=>{ document.addEventListener('click',closeRoomCtx,{once:true}); document.addEventListener('contextmenu',function _c(ev){ if(!menu.contains(ev.target)){ closeRoomCtx(); document.removeEventListener('contextmenu',_c);} },{once:false}); },0);
+  setTimeout(()=>{
+    document.addEventListener('click',_roomCtxDismiss,true);
+    document.addEventListener('contextmenu',_roomCtxDismiss,true);
+  },0);
 }
 const COLOR_PALETTE=['#188a4a','#22a55b','#0ea5e9','#2563eb','#6d28d9','#7c3aed','#db2777','#d32f2f','#dc2626','#e0900e','#f59e0b','#0d9488','#475569','#2b3446','#111827'];
 
@@ -4459,7 +4472,7 @@ function toast(msg,ok){
 const SB_URL='https://bmycnlhryfwjihjxxshp.supabase.co';
 const SB_KEY='sb_publishable_FGaZYRcF0mewLes59vAJeQ_jvWAZxGP';
 const HOTEL_ID='grand_capital';
-let SB=null, cloudReady=false, saveTimer=null, syncTimer=null, lastSavedAt=0, cloudBusy=false, savePending=false, seedDone=false, serverSeedTag=null;
+let SB=null, cloudReady=false, saveTimer=null, syncTimer=null, lastSavedAt=0, cloudBusy=false, savePending=false, seedDone=false, serverSeedTag=null, cleanedEmpty21=false;
 let cloudLoadedOK=false;   // ⚠️ birinchi muvaffaqiyatli yuklashsiz SAQLAMAYMIZ (ma'lumot yo'qolmasin)
 
 // Supabase mijozini ishga tushiramiz
@@ -4533,9 +4546,12 @@ async function cloudLoad(){
     lastFingerprint=dataFingerprint();   // yuklangan holatni "o'zgarmagan" deb belgilaymiz
     // ⚠️ BIR MARTALIK TOZA START (yangi versiyaga o'tishda)
     serverSeedTag=d.seed||null;
-    serverSeedTag=d.seed||null;
     cloudLoadedOK=true;               // serverdan o'qildi — endi saqlash xavfsiz
-    if(d.seed===SEED_TAG){ seedDone=true; } else { await seedCleanStart(); }
+    // ⚠️ BIR MARTALIK TOZA START — faqat bir marta ishlaydi.
+    //    Bir marta tozalangach (cleanedEmpty21=true) — DASTUR HECH QACHON o'zi o'chirmaydi.
+    //    Bronlaringiz doim saqlanib turadi, uchib ketmaydi.
+    cleanedEmpty21=!!d.cleanedEmpty21;
+    if(cleanedEmpty21){ seedDone=true; } else { await seedCleanStart(); }
     cloudBadge('☁️ Ma\'lumot yuklandi ✓',true);
     return true;
   }catch(e){
@@ -4566,6 +4582,7 @@ async function cloudSave(){
     const conf={ savedAt:Date.now(), base:base.getTime(), ganttStart:ganttStart.getTime(),
       rooms, typeRates, hotelCfg, companies, companyData, statChannels, channels,
       pendingBookings, emArchive, emehmonTolerance, usdRate, eurRate, rubRate, LANG, statusColors, ackedShubha, auditHistory, roomBlocks, shifts,
+      cleanedEmpty21: cleanedEmpty21||undefined,   // bir marta tozalangani belgisi — o'chmaydi
       seed:(seedDone?SEED_TAG:serverSeedTag)||undefined };   // yuklanmagan bo'lsa ham belgini o'chirmaymiz
     const {error:e2}=await SB.from('settings').upsert({hotel_id:HOTEL_ID,data:conf,updated_at:new Date().toISOString()},{onConflict:'hotel_id'});
     if(e2) throw e2;
@@ -4630,22 +4647,23 @@ function startCloudSync(){
 const SEED_TAG='v2026_07_21_empty';
 async function seedCleanStart(){
   try{
-    // SERVERDAGI barcha test ma'lumot o'chadi
+    // SERVERDAGI barcha test ma'lumot o'chadi — FAQAT BIR MARTA
     await SB.from('stays').delete().eq('hotel_id',HOTEL_ID);
     await SB.from('audit_log').delete().eq('hotel_id',HOTEL_ID);
     stays=[]; auditLog=[]; roomBlocks=[];
     // Sana — 21.07.2026, hech qanday bron QOLMAYDI (mutlaqo bo'sh)
     base.setTime(new Date(2026,6,21).getTime());
     ganttStart=new Date(base.getTime()-2*DAY);
+    cleanedEmpty21=true;               // ⚠️ endi hech qachon qayta tozalamaydi
     lastFingerprint=''; seedDone=true;
     await cloudSave();
     const {data:st}=await SB.from('settings').select('data').eq('hotel_id',HOTEL_ID).maybeSingle();
-    const conf=Object.assign({},(st&&st.data)||{},{seed:SEED_TAG});
+    const conf=Object.assign({},(st&&st.data)||{},{seed:SEED_TAG,cleanedEmpty21:true});
     await SB.from('settings').upsert({hotel_id:HOTEL_ID,data:conf,updated_at:new Date().toISOString()},{onConflict:'hotel_id'});
     seedDone=true;
     lastSavedAt=conf.savedAt||Date.now();
     lastFingerprint=dataFingerprint();
-    toast('Dastur butunlay tozalandi — 21.07.2026, bo\'sh (bron yo\'q) ✓',true);
+    toast('Dastur bir marta tozalandi — 21.07.2026, bo\'sh. Endi bronlar saqlanadi ✓',true);
   }catch(e){ toast('Tozalashda xato: '+(e.message||''),false); }
 }
 
