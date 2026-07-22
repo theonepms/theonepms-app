@@ -200,6 +200,13 @@ html.dark .g-cell.g-blocked{background:repeating-linear-gradient(45deg,#5c3721,#
 .g-bars{position:absolute;inset:0;pointer-events:none}
 .g-bars .resv{pointer-events:auto}
 .g-track.drop-hover{background:rgba(37,99,235,.08);outline:2px dashed var(--brand);outline-offset:-2px}
+/* Xonaga o'ng tugma — kontekst menyu */
+.ctxmenu{position:fixed;z-index:200;min-width:210px;background:var(--panel);border:1px solid var(--line-2);border-radius:11px;box-shadow:var(--shadow-lg);padding:6px;overflow:hidden;animation:ctxin .1s ease}
+@keyframes ctxin{from{opacity:0;transform:scale(.96) translateY(-4px)}to{opacity:1;transform:none}}
+.ctxmenu .ctx-h{font-size:11.5px;font-weight:700;color:var(--txt-2);padding:7px 10px 8px;border-bottom:1px solid var(--line);margin-bottom:4px}
+.ctxmenu button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 11px;border-radius:7px;font-size:13.5px;font-weight:500;color:var(--txt);transition:.1s}
+.ctxmenu button span{width:18px;text-align:center;flex:none}
+.ctxmenu button:hover{background:var(--panel-2);color:var(--brand-ink)}
 .resv[draggable="true"]{cursor:grab}
 .resv[draggable="true"]:active{cursor:grabbing}
 .resv.delsel{outline:2.5px solid #dc2626;outline-offset:1px;box-shadow:0 0 0 2px #fff}
@@ -323,6 +330,8 @@ table.data tr:hover td{background:var(--panel-2)}
 .folio-act.primary:hover{filter:brightness(1.08)}
 .folio-act.danger{color:var(--red-ink);border-color:#f0c2c2}
 .folio-act.danger:hover{background:var(--red-bg);border-color:var(--red)}
+.folio-act.warn{color:var(--amber-ink);border-color:#e8c98a;background:var(--amber-bg)}
+.folio-act.warn:hover{border-color:var(--amber);filter:brightness(1.03)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
 .guestblock{border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:14px;margin-bottom:12px;position:relative;background:var(--panel-2)}
@@ -1144,6 +1153,33 @@ function unblockRoom(id){
   lastFingerprint=''; saveState(); drawBlockModal(); render();
   toast(`Xona ${b.room} ochildi ✓`,true);
 }
+/* ===== XONAGA O'NG TUGMA — kontekst menyu ===== */
+function closeRoomCtx(){ const m=document.getElementById('roomCtx'); if(m) m.remove(); }
+function roomCtxMenu(e,room,timeMs){
+  e.preventDefault();
+  if(role==='owner') return;
+  closeRoomCtx();
+  const d=new Date(timeMs);
+  const blk=isRoomBlocked(room,d);
+  const past=stripTime(d).getTime()<stripTime(base).getTime();
+  let items='';
+  if(!blk && !past) items+=`<button onclick="closeRoomCtx();openRegister('${room}',new Date(${timeMs}))"><span>➕</span> Yangi bron</button>`;
+  if(!blk)          items+=`<button onclick="closeRoomCtx();openBlockModal('${room}')"><span>🔧</span> Xonani yopish</button>`;
+  if(blk)           items+=`<button onclick="closeRoomCtx();unblockRoom('${blk.id}')"><span style="color:var(--green-ink)">✓</span> Xonani ochish</button>`;
+  if(blk)           items+=`<button onclick="closeRoomCtx();openBlockModal('${room}')"><span>🔧</span> Yopilishlarni boshqarish</button>`;
+  const menu=document.createElement('div');
+  menu.id='roomCtx'; menu.className='ctxmenu';
+  menu.innerHTML=`<div class="ctx-h">🏨 Xona ${room}${blk?` · <span style="color:${statusColors.blocked||'#7b4a2d'};font-weight:700">yopiq</span>`:''}</div>${items}`;
+  document.body.appendChild(menu);
+  let x=e.clientX,y=e.clientY;
+  menu.style.left=x+'px'; menu.style.top=y+'px';
+  requestAnimationFrame(()=>{
+    const r=menu.getBoundingClientRect();
+    if(r.right>innerWidth)  menu.style.left=Math.max(6,innerWidth-r.width-8)+'px';
+    if(r.bottom>innerHeight) menu.style.top=Math.max(6,innerHeight-r.height-8)+'px';
+  });
+  setTimeout(()=>{ document.addEventListener('click',closeRoomCtx,{once:true}); document.addEventListener('contextmenu',function _c(ev){ if(!menu.contains(ev.target)){ closeRoomCtx(); document.removeEventListener('contextmenu',_c);} },{once:false}); },0);
+}
 const COLOR_PALETTE=['#188a4a','#22a55b','#0ea5e9','#2563eb','#6d28d9','#7c3aed','#db2777','#d32f2f','#dc2626','#e0900e','#f59e0b','#0d9488','#475569','#2b3446','#111827'];
 
 /* ================= NAV ================= */
@@ -1306,7 +1342,10 @@ function stayStartMs(s){
 }
 function stayEndMs(s){
   const sameDay=stripTime(s.outDate).getTime()===stripTime(s.inDate).getTime();
-  const d=stripTime(s.outDate).getTime();
+  // ⚠️ Chiqib ketgan bo'lsa — REJADAGI emas, HAQIQIY chiqish sanasi (checkoutDate).
+  //    Erta chiqsa xona o'sha kundan bo'shaydi — chiziq cho'zilmaydi.
+  const outD=(s.status==='out'&&s.checkoutDate)?stripTime(s.checkoutDate):stripTime(s.outDate);
+  const d=outD.getTime();
   let t=toMin(s.checkoutTime||'');
   if(t==null){
     if(sameDay) return stayStartMs(s)+2*3600000;   // kunduzgi, hali chiqmagan — 2 soat deb olamiz
@@ -1402,13 +1441,14 @@ function renderGanttRows(){
     days.forEach((d,ci)=>{
       const past=d.getTime()<base.getTime();
       const blk=isRoomBlocked(rm.n,d);
+      const cellData=`data-cell="${rm.n}|${d.getTime()}"`;
       if(blk){
-        cells+=`<div class="g-cell g-blocked ${ci===todayIdx?'today':''}" title="🔧 Yopiq: ${blk.reason} (${blk.by})"></div>`;
+        cells+=`<div class="g-cell g-blocked ${ci===todayIdx?'today':''}" ${cellData} title="🔧 Yopiq: ${blk.reason} (${blk.by})"></div>`;
         return;
       }
       const cls='g-cell '+(ci===todayIdx?'today ':'')+(past?'past':'addable');
       const attr=past?'':`data-add="${rm.n}|${d.getTime()}"`;
-      cells+=`<div class="${cls}" ${attr}>${past?'':'<span class="addhint">+</span>'}</div>`;
+      cells+=`<div class="${cls}" ${attr} ${cellData}>${past?'':'<span class="addhint">+</span>'}</div>`;
     });
     // barlar — to'liq kun kataklarini egallaydi, ustma-ust (vertical) joylashadi
     let bars='';
@@ -1430,6 +1470,15 @@ function renderGanttRows(){
         /* HALI CHIQMAGAN kunduzgi — qachon ketishi noma'lum → keyingi kunga o'tib turadi */
         const t1=hhToFrac(s.arrTime)||0;
         geo.push({s, L:dayIdx+Math.min(t1,0.6), R:dayIdx+1+0.42, du:false});
+      } else if(s.status==='out'){
+        /* CHIQIB KETGAN (oddiy) — chiziq REJADAGI chiqishgacha emas,
+           HAQIQIY chiqish payti (checkoutDate + checkoutTime) da tugaydi → cho'zilmaydi */
+        const coIdx=Math.round((stripTime(s.checkoutDate||s.outDate)-ganttStart)/DAY);
+        const coFrac=hhToFrac(s.checkoutTime||'12:00');
+        let Lc=dayIdx-earlyF+startInset;
+        let Rc=coIdx+coFrac;
+        if(Rc<=Lc) Rc=Lc+0.2;                 // minimal ko'rinadigan kenglik
+        geo.push({s, L:Lc, R:Rc, du:false});
       } else {
         geo.push({s, L:dayIdx-earlyF+startInset, R:dayIdx+span+coF+lateF, du});
       }
@@ -1492,7 +1541,7 @@ function renderGanttRows(){
       bars+=`<div class="resv ${sc.cls}" style="${sc.style};top:${btop}px;left:calc(${leftPct}% + 3px);width:calc(${widPct}% - 7px);height:${bh}px;line-height:${bh-2}px;${cancl?'font-size:9px;opacity:.85;':''}" data-id="${s.id}" title="${s.firstName} ${s.lastName}${dun}${badges?' · '+badges:''}${cancl?' · bekor qilingan':''}${s.corrected?' · tuzatilgan':''}">${label}${badges}${corr}</div>`;
     });
     rowsHtml+=`<div class="g-row" style="height:${rowH}px">
-      <div class="g-label"><b>${rm.n}</b>${(role==='admin'||role==='manager')?`<button class="blockbtn" title="Xonani yopish (ta'mir)" onclick="event.stopPropagation();openBlockModal('${rm.n}')">🔧</button>`:''}<span>${typeLabel(rm.t)}${blocksForRoom(rm.n).length?' <span style="color:'+statusColors.blocked+';font-weight:700">· yopiq</span>':''}</span></div>
+      <div class="g-label" ${(role!=='owner')?`data-room-label="${rm.n}"`:''}><b>${rm.n}</b><span>${typeLabel(rm.t)}${blocksForRoom(rm.n).length?' <span style="color:'+statusColors.blocked+';font-weight:700">· yopiq</span>':''}</span></div>
       <div class="g-track" data-room="${rm.n}" style="grid-template-columns:repeat(${ND},1fr)">${cells}<div class="g-bars">${bars}</div></div>
     </div>`;
   });
@@ -1593,6 +1642,15 @@ function wireGantt(){
       if(e.ctrlKey||e.metaKey){ toggleGroupSel(r,+tm,c); }
       else openRegister(r,new Date(+tm)); };
   });
+  // ⌥ O'NG TUGMA — xona menyusi (yangi bron / xonani yopish / ochish)
+  if(role!=='owner'){
+    document.querySelectorAll('.g-cell[data-cell]').forEach(c=>{
+      c.oncontextmenu=(e)=>{ const[r,tm]=c.dataset.cell.split('|'); roomCtxMenu(e,r,+tm); };
+    });
+    document.querySelectorAll('.g-label[data-room-label]').forEach(l=>{
+      l.oncontextmenu=(e)=>{ roomCtxMenu(e,l.dataset.roomLabel,base.getTime()); };
+    });
+  }
   document.querySelectorAll('.resv').forEach(el=>{
     el.onclick=(e)=>{e.stopPropagation();
       if(e.ctrlKey||e.metaKey){ toggleDelSel(el.dataset.id,el); return; }
@@ -1939,14 +1997,17 @@ function openFolio(id,keepEdit){
     if(rItems.length) actBtns+=gGroup('↔','Xona',rItems);
     actBtns+=gbtn('openInvoice','🧾 '+t('invoice'))+gbtn('doCancel','✕ Bekor qilish','danger');
   } else { // out (check-out qilingan)
+    const coToday=checkoutIsToday(s);
+    // ♻ VASTANAVIT — faqat BUGUN chiqqan bronga · admin ham, menejer ham
+    if(coToday) actBtns+=gbtn('doRestore','♻ Qayta tiklash (vastanavit)','primary');
     if(role==='manager'){
-      actBtns+=gbtn('doRestore','♻ Qayta tiklash (vastanavit)','primary');
+      // ✏️ IZMENIT — faqat menejer · istalgan eski kunga · hamma maydon
+      actBtns+=gbtn('openIzmenit','✏️ Izmenit (tuzatish)','warn');
       actBtns+=gGroup('₸','To\'lov / vozvrat',[['addFolioPay','₸ To\'lov qo\'shish'],['doRefund','↩ VOZVRAT (qaytarish)']]);
       actBtns+=gGroup('🛏','Hisobga qo\'shish',[['doCharge','🧾 Xizmat qo\'shish'],['doServiceAdd','➕ Yashash qo\'shish']]);
-      actBtns+=gGroup('↔','Xona',[['doMoveRoom','↔ Xona ko\'chirish'],['doExtend','📅 Muddatni cho\'zish'],['doPriceCorrect','💰 Narx korreksiyasi']]);
       actBtns+=gbtn('openInvoice','🧾 '+t('invoice'));
     } else {
-      // ADMIN: chiqib ketgan mehmonning QARZINI yopa oladi
+      // ADMIN: chiqib ketgan mehmonning QARZINI yopa oladi + bugun chiqqan bo'lsa vastanavit
       if(balance(s)>0) actBtns+=gbtn('addFolioPay','₸ Qarzni to\'lash ('+money(balance(s))+')','primary');
       actBtns+=gbtn('openInvoice','🧾 '+t('invoice'));
     }
@@ -2178,9 +2239,19 @@ function doPriceCorrect(id){
   if(role!=='manager'){ denyMgr('Narx korreksiyasi'); return; }
   openActionModal(id,'correct');
 }
+/* Bron AYNAN BUGUN chiqqanmi? (vastanavit shunga ruxsat) */
+function checkoutIsToday(s){
+  if(!s||s.status!=='out') return false;
+  return stripTime(s.checkoutDate||s.outDate).getTime()===stripTime(base).getTime();
+}
 function doRestore(id){
-  if(role!=='manager'){denyMgr('Vastanavit (qayta tiklash)');return;}
   const s=stays.find(x=>x.id===id); if(!s)return;
+  if(role==='owner'){ toast('Owner faqat ko\'radi.',false); return; }
+  // ⛔ Eski kunga vastanavit YO'Q — faqat bugun chiqqan bron tiklanadi (admin ham, menejer ham)
+  if(!checkoutIsToday(s)){
+    toast('Vastanavit faqat BUGUN chiqqan bronga ishlaydi. Eski kunni menejer «✏️ Izmenit» orqali tuzatadi.',false);
+    return;
+  }
   // Tiklangandan keyingi oraliq
   const newOut=s._preOut?new Date(s._preOut):new Date(s.outDate);
   // tiklangandan KEYIN bron qanday oraliqni egallaydi — shuni hisoblaymiz
@@ -2257,6 +2328,157 @@ function commitRestore(){
     restoreNow(s,a.newOut,a.newRoom);
     logAction(s,'warn',`Boshqa xonaga tiklandi: ${a.newRoom}`,0,a.reason);
   }
+}
+
+/* ═══════════════ ✏️ IZMENIT (tuzatish) — FAQAT MENEJER, istalgan eski kunga ═══════════════
+   Narx · to'lov usuli · sana · ism · xona · xizmat — hammasi.
+   Sabab majburiy · nazorat jurnaliga QIZIL · shubhali amallarga · eski qiymat saqlanadi. */
+let izmenitState=null;
+function openIzmenit(id){
+  if(role!=='manager'){ toast('«Izmenit» (tuzatish) — faqat menejer bajaradi.',false); return; }
+  const s=stays.find(x=>x.id===id); if(!s)return;
+  let payIdx=-1;
+  for(let i=s.payments.length-1;i>=0;i--){ if(s.payments[i].type==='pay'){ payIdx=i; break; } }
+  const lp=payIdx>=0?s.payments[payIdx]:null;
+  izmenitState={
+    id,
+    firstName:s.firstName||'', lastName:s.lastName||'',
+    room:s.room,
+    inDate:ymd(s.inDate),
+    outDate:ymd(s.checkoutDate||s.outDate),
+    nightly:s.nightly||Math.round(s.price/Math.max(1,nights(s))),
+    payIdx, payMethod:lp?lp.method:'', payCard:lp?(lp.card||'UZCARD'):'UZCARD',
+    charges:(s.charges||[]).map(c=>({name:c.name,amount:c.amount,keep:true})),
+    reason:''
+  };
+  drawIzmenit();
+}
+function drawIzmenit(){
+  const a=izmenitState; if(!a) return;
+  const s=stays.find(x=>x.id===a.id); if(!s) return;
+  document.getElementById('izOverlay')?.remove();
+  const roomOpts=rooms.map(r=>`<option value="${r.n}"${a.room===r.n?' selected':''}>${r.n} · ${typeLabel(r.t)}</option>`).join('');
+  const methodBtns=METHODS.map(([m,l])=>`<button class="${a.payMethod===m?'on':''}" onclick="izmenitState.payMethod='${m}';drawIzmenit()">${l}</button>`).join('');
+  const chargeRows=a.charges.length? a.charges.map((c,i)=>`
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+      <input type="checkbox" ${c.keep?'checked':''} onchange="izmenitState.charges[${i}].keep=this.checked;drawIzmenit()" title="Belgini olsangiz — xizmat o'chadi">
+      <span style="flex:1;font-size:13px${c.keep?'':';text-decoration:line-through;opacity:.5'}">${c.name}</span>
+      <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="${c.amount}" oninput="izmenitState.charges[${i}].amount=+this.value" style="width:130px;padding:6px 8px;border:1.5px solid var(--line);border-radius:6px" ${c.keep?'':'disabled'}>
+    </div>`).join('') : '<div class="mini-hint" style="padding:0">Xizmat yo\'q</div>';
+  const html=`<div class="modal-ov" id="izOverlay" onclick="if(event.target===this)closeIzmenit()">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-h"><h3>✏️ Izmenit — ${s.firstName} ${s.lastName}</h3><button class="x" onclick="closeIzmenit()">✕</button></div>
+      <div class="modal-b">
+        <div style="background:var(--amber-bg);border:1px solid #e8c98a;border-radius:10px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;color:var(--amber-ink)">
+          🔴 Bu amal <b>nazorat jurnaliga qizil</b> yoziladi va <b>🚨 shubhali amallarga</b> qo'shiladi. Har o'zgarish «eski → yangi» ko'rinishda saqlanadi — iz o'chmaydi.</div>
+        <div class="grid2">
+          <div class="field"><label>Ism</label><input value="${a.firstName}" oninput="izmenitState.firstName=this.value"></div>
+          <div class="field"><label>Familiya</label><input value="${a.lastName}" oninput="izmenitState.lastName=this.value"></div>
+        </div>
+        <div class="grid2">
+          <div class="field"><label>Xona</label><select onchange="izmenitState.room=this.value">${roomOpts}</select></div>
+          <div class="field"><label>1 kunlik narx (so'm)</label><input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="${a.nightly}" oninput="izmenitState.nightly=+this.value"></div>
+        </div>
+        <div class="grid2">
+          <div class="field"><label>Kelish sanasi</label><input type="date" value="${a.inDate}" onchange="izmenitState.inDate=this.value"></div>
+          <div class="field"><label>Chiqish sanasi</label><input type="date" value="${a.outDate}" onchange="izmenitState.outDate=this.value"></div>
+        </div>
+        ${a.payIdx>=0?`<div class="field"><label>Oxirgi to'lov usuli</label>
+          <div class="method-sel wrap">${methodBtns}${a.payMethod==='karta'?`<select onchange="izmenitState.payCard=this.value" style="border:1.5px solid var(--line);border-radius:6px;padding:0 6px">${['UZCARD','HUMO','VISA','MASTER'].map(c=>`<option${a.payCard===c?' selected':''}>${c}</option>`).join('')}</select>`:''}</div></div>`:''}
+        <div class="field"><label>Xizmatlar (summani tuzatish · belgini olib o'chirish)</label>${chargeRows}</div>
+        <div class="field"><label>Sabab (majburiy)</label><textarea rows="2" oninput="izmenitState.reason=this.value" placeholder="Nega tuzatilmoqda? (masalan: narx xato kiritilgan edi)">${a.reason}</textarea></div>
+      </div>
+      <div class="modal-f"><button class="btn btn-ghost" onclick="closeIzmenit()">Yopish</button>
+        <button class="btn btn-primary" style="background:var(--amber);border-color:var(--amber)" onclick="commitIzmenit()">✏️ Tuzatishni saqlash</button></div>
+    </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function closeIzmenit(){ izmenitState=null; document.getElementById('izOverlay')?.remove(); }
+function commitIzmenit(){
+  const a=izmenitState; if(!a) return;
+  const s=stays.find(x=>x.id===a.id); if(!s) return;
+  if(!a.reason.trim()){ toast('Sababni yozing (majburiy).',false); return; }
+  const parseYmd=v=>{ const p=(v||'').split('-'); return new Date(+p[0],+p[1]-1,+p[2]); };
+  const D=v=>v.split('-').reverse().join('.');
+  const newIn=parseYmd(a.inDate), newOut=parseYmd(a.outDate);
+  if(isNaN(newIn.getTime())||isNaN(newOut.getTime())){ toast('Sana noto\'g\'ri.',false); return; }
+  if(stripTime(newOut).getTime()<stripTime(newIn).getTime()){ toast('Chiqish sanasi kelishdan oldin bo\'lmasin.',false); return; }
+  const newNightly=+a.nightly||0;
+  const changes=[];   // "Maydon: eski → yangi"
+
+  // 1) ism / familiya
+  if(a.firstName.trim()!==s.firstName) changes.push(`Ism: ${s.firstName||'—'} → ${a.firstName.trim()||'—'}`);
+  if(a.lastName.trim()!==s.lastName)   changes.push(`Familiya: ${s.lastName||'—'} → ${a.lastName.trim()||'—'}`);
+
+  // 2) xona (band bo'lsa — rad)
+  if(a.room!==s.room){
+    const inMs=stripTime(newIn).getTime();
+    const outMs=Math.max(stripTime(newOut).getTime(), inMs+DAY);
+    const clash=stays.some(x=>x.id!==s.id && x.room===a.room && x.status!=='canceled'
+      && stripTime(x.inDate).getTime()<outMs && stripTime(x.checkoutDate||x.outDate).getTime()>inMs);
+    if(clash){ toast(`${a.room}-xona bu sanalarda band.`,false); return; }
+    changes.push(`Xona: ${s.room} → ${a.room}`);
+  }
+
+  // 3) sanalar
+  const oldIn=ymd(s.inDate), oldOut=ymd(s.checkoutDate||s.outDate);
+  const dateChanged=(a.inDate!==oldIn)||(a.outDate!==oldOut);
+  if(a.inDate!==oldIn)  changes.push(`Kelish: ${D(oldIn)} → ${D(a.inDate)}`);
+  if(a.outDate!==oldOut) changes.push(`Chiqish: ${D(oldOut)} → ${D(a.outDate)}`);
+
+  // 4) narx
+  const oldNightly=s.nightly||Math.round(s.price/Math.max(1,nights(s)));
+  const priceChanged=newNightly!==oldNightly;
+  if(priceChanged) changes.push(`Narx (1 kun): ${money(oldNightly)} → ${money(newNightly)}`);
+
+  // 5) to'lov usuli
+  if(a.payIdx>=0 && s.payments[a.payIdx]){
+    const p=s.payments[a.payIdx];
+    if(a.payMethod && a.payMethod!==p.method) changes.push(`To'lov usuli: ${methodLabel(p.method)} → ${methodLabel(a.payMethod)}`);
+    else if(a.payMethod==='karta' && p.method==='karta' && a.payCard!==(p.card||'')) changes.push(`Karta: ${p.card||'—'} → ${a.payCard}`);
+  }
+
+  // 6) xizmatlar
+  const origCharges=(s.charges||[]);
+  a.charges.forEach((c,i)=>{
+    const oc=origCharges[i]; if(!oc) return;
+    if(!c.keep) changes.push(`Xizmat o'chirildi: ${oc.name} (${money(oc.amount)})`);
+    else if(+c.amount!==+oc.amount) changes.push(`Xizmat «${oc.name}»: ${money(oc.amount)} → ${money(+c.amount)}`);
+  });
+
+  if(!changes.length){ toast('Hech narsa o\'zgarmadi.',false); return; }
+
+  // eski holat saqlanadi — iz o'chmaydi
+  s.izmenitLog=s.izmenitLog||[];
+  s.izmenitLog.push({at:uzTime()+' · '+fmtShort(base), by:'Menejer', reason:a.reason.trim(), changes:changes.slice()});
+
+  // ── QO'LLAYMIZ ──
+  s.firstName=a.firstName.trim(); s.lastName=a.lastName.trim();
+  if(a.room!==s.room) s.room=a.room;
+  s.inDate=stripTime(newIn);
+  if(s.status==='out'){ s.checkoutDate=stripTime(newOut); s.outDate=stripTime(newOut); }
+  else { s.outDate=stripTime(newOut); }
+  if(dateChanged||priceChanged){
+    const n=Math.max(1,nights(s));
+    s.rates=Array(n).fill(newNightly);
+    s.nightly=newNightly;
+  }
+  if(a.payIdx>=0 && s.payments[a.payIdx]){
+    s.payments[a.payIdx].method=a.payMethod;
+    if(a.payMethod==='karta') s.payments[a.payIdx].card=a.payCard;
+    else delete s.payments[a.payIdx].card;
+  }
+  // xizmatlar — belgilanganlar qoladi, summasi yangilanadi
+  const kept=[];
+  origCharges.forEach((oc,i)=>{ if(a.charges[i] && a.charges[i].keep) kept.push(Object.assign({},oc,{amount:+a.charges[i].amount})); });
+  s.charges=kept;
+  recalc(s);
+
+  // 🔴 nazoratga QIZIL + 🚨 shubhali
+  logAction(s,'warn',`✏️ IZMENIT (tuzatish): ${changes.join(' · ')}`,0,a.reason.trim());
+  s.corrected=true;
+  closeIzmenit(); lastFingerprint=''; saveState(); openFolio(s.id); render();
+  toast('Tuzatildi — nazorat jurnaliga qizil yozildi ✓',true);
 }
 
 /* Universal action modal (to'lov / narx / vozvrat / qo'shimcha to'lov) — prompt() sandboxda ishlamaydi */
@@ -3038,7 +3260,8 @@ function shubhaList(){
     if(role==='manager' && byRole==='owner') return;
     let lvl=null, why='';
     // 🔴 YUQORI XAVF
-    if(/PUL QAYTARILDI/i.test(txt)){ lvl='high'; why='Kassadan pul chiqdi'; }
+    if(/IZMENIT/i.test(txt)){ lvl='high'; why='Eski amal tuzatildi (izmenit)'; }
+    else if(/PUL QAYTARILDI/i.test(txt)){ lvl='high'; why='Kassadan pul chiqdi'; }
     else if(/vastanavit|qayta tiklandi|BEKOR QILISHNI QAYTARISH/i.test(txt)){ lvl='high'; why='Yopilgan hisob qayta ochildi'; }
     else if(/BRON BEKOR QILINDI/i.test(txt)){ lvl='high'; why='Yashagan mehmon bekor qilindi'; }
     else if(/narx/i.test(txt) && /o'zgar|korreksiya|→/i.test(txt)){ lvl='high'; why='Narx o\'zgartirildi'; }
@@ -3812,24 +4035,44 @@ function renderStatistika(){
 let hotelCfg={name:'Grand Capital Hotel',currency:'UZS',rooms:rooms.length};
 function saveCfg(){toast('Sozlamalar saqlandi ✓',true);}
 let usdRate=12680; // 1 USD = ... so'm (Markaziy bank kursi)
+let eurRate=13800; // 1 EUR = ... so'm
+let rubRate=140;   // 1 RUB = ... so'm
 let rateUpdated='—';
 let rateLoading=false;
-function som2usd(v){ const el=document.getElementById('usdIn'); if(el)el.value=(+v/usdRate).toFixed(2); }
-function usd2som(v){ const el=document.getElementById('somIn'); if(el)el.value=Math.round(+v*usdRate); }
-function setUsdRate(v){ usdRate=+v||1; const s=document.getElementById('somIn'); if(s)som2usd(s.value); }
-/* Dollar kursini O'zbekiston Markaziy bankidan (cbu.uz) avtomatik olish */
+/* Har valyuta uchun kurs (so'mda) */
+function rateOf(cur){ return cur==='EUR'?eurRate:cur==='RUB'?rubRate:usdRate; }
+function setRateOf(cur,v){ v=+v||1; if(cur==='EUR')eurRate=v; else if(cur==='RUB')rubRate=v; else usdRate=v; }
+/* Valyuta → so'm va so'm → valyuta (ikki tomonlama) */
+function cur2som(cur,v){ const el=document.getElementById('som_'+cur); if(el)el.value=Math.round(+v*rateOf(cur)); }
+function som2cur(cur,v){ const el=document.getElementById('cur_'+cur); if(el)el.value=(+v/rateOf(cur)).toFixed(2); }
+function setCurRate(cur,v){ setRateOf(cur,v); const c=document.getElementById('cur_'+cur); if(c)cur2som(cur,c.value); }
+/* Eski dollar funksiyalari — moslik uchun saqlanadi */
+function som2usd(v){ const el=document.getElementById('cur_USD'); if(el)el.value=(+v/usdRate).toFixed(2); }
+function usd2som(v){ const el=document.getElementById('som_USD'); if(el)el.value=Math.round(+v*usdRate); }
+function setUsdRate(v){ setCurRate('USD',v); }
+/* Bitta valyuta kursini CBU dan olish */
+async function fetchCbuRate(code){
+  const res=await fetch('https://cbu.uz/uz/arkhiv-kursov-valyut/json/'+code+'/');
+  const data=await res.json();
+  const row=Array.isArray(data)?data[0]:data;
+  if(row&&row.Rate) return {rate:parseFloat(row.Rate), date:row.Date||''};
+  throw new Error('no data');
+}
+/* USD + EUR + RUB — uchalasini Markaziy bankdan (cbu.uz) avtomatik olish */
 async function autoRate(){
   if(rateLoading)return; rateLoading=true;
   const btn=document.getElementById('rateBtn'); if(btn){btn.disabled=true;btn.textContent='⏳ Yuklanmoqda...';}
   try{
-    const res=await fetch('https://cbu.uz/uz/arkhiv-kursov-valyut/json/USD/');
-    const data=await res.json();
-    const usd=Array.isArray(data)?data[0]:data;
-    if(usd&&usd.Rate){
-      usdRate=Math.round(parseFloat(usd.Rate));
-      rateUpdated=(usd.Date||fmt(new Date()))+' · Markaziy bank';
-      rateLoading=false; render();
-      toast('Markaziy bank kursi: 1$ = '+usdRate.toLocaleString('ru-RU')+" so'm ✓",true);
+    const [u,e,r]=await Promise.allSettled([fetchCbuRate('USD'),fetchCbuRate('EUR'),fetchCbuRate('RUB')]);
+    let ok=0, dt='';
+    if(u.status==='fulfilled'){ usdRate=Math.round(u.value.rate); dt=u.value.date; ok++; }
+    if(e.status==='fulfilled'){ eurRate=Math.round(e.value.rate); dt=dt||e.value.date; ok++; }
+    if(r.status==='fulfilled'){ rubRate=Math.round(r.value.rate*100)/100; dt=dt||r.value.date; ok++; }  // rubl kichik — 2 xona aniqlik
+    rateLoading=false;
+    if(ok){
+      rateUpdated=(dt||fmt(new Date()))+' · Markaziy bank';
+      render();
+      toast(`Markaziy bank kursi yangilandi ✓ ($ ${usdRate.toLocaleString('ru-RU')} · € ${eurRate.toLocaleString('ru-RU')} · ₽ ${rubRate.toLocaleString('ru-RU')})`,true);
       return;
     }
     throw new Error('no data');
@@ -3910,20 +4153,26 @@ function renderSettings(){
       <div class="mini-hint" style="padding:12px 20px 0">Hotel o'z xonalari uchun 1 kunlik tarifni shu yerda belgilaydi. Yangi hotelga o'rnatilganda o'zi tanlaydi.</div>
       <table class="data"><thead><tr><th>${P("Xona turi")}</th><th>${P("1 kunlik tarif")}</th><th>${P("Soni")}</th></tr></thead><tbody>${typeRows}</tbody></table></div>
 
-    <div class="panel"><div class="panel-h"><h3>${t('valyuta')} · dollar ⇄ so'm</h3><span class="spacer"></span>
+    <div class="panel"><div class="panel-h"><h3>${t('valyuta')} · $ · € · ₽ ⇄ so'm</h3><span class="spacer"></span>
       <button id="rateBtn" class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="autoRate()">↻ CBU dan yangilash</button></div>
       <div class="panel-b" style="padding:18px 20px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;font-size:13px;flex-wrap:wrap">
-          <span style="font-weight:600">1 USD = <b style="color:var(--brand-ink)">${usdRate.toLocaleString('ru-RU')} so'm</b></span>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:12.5px;flex-wrap:wrap">
           <span class="tag paid">Markaziy bank (CBU)</span>
           <span style="color:var(--txt-3)">yangilangan: ${rateUpdated}</span></div>
-        <div class="grid2">
-          <div class="field"><label>Dollar ($) — yozing</label><input id="usdIn" type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="100" oninput="usd2som(this.value)" placeholder="100"></div>
-          <div class="field"><label>So'm — yoki bu yerga yozing</label><input id="somIn" type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="${100*usdRate}" oninput="som2usd(this.value)"></div>
-        </div>
-        <div class="field" style="margin-top:6px"><label>Kursni qo'lda kiritish (internet yo'q bo'lsa)</label>
-          <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="${usdRate}" onchange="setUsdRate(this.value);render()" placeholder="12680"></div>
-        <div class="mini-hint" style="padding:0">Kurs O'zbekiston <b>Markaziy bankidan (cbu.uz)</b> olinadi. "CBU dan yangilash" tugmasi — bugungi rasmiy kursni internetdan tortadi. Internet bo'lmasa, qo'lda kiriting.</div>
+        ${[['USD','$','Dollar'],['EUR','€','Yevro'],['RUB','₽','Rubl']].map(([code,sym,name])=>`
+          <div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;flex-wrap:wrap">
+              <span style="font-weight:700;font-size:15px">${sym} ${name}</span>
+              <span style="color:var(--txt-3)">1 ${code} = <b style="color:var(--brand-ink)">${rateOf(code).toLocaleString('ru-RU')} so'm</b></span>
+            </div>
+            <div class="grid2">
+              <div class="field" style="margin:0"><label>${sym} ${code} — yozing</label><input id="cur_${code}" type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="100" oninput="cur2som('${code}',this.value)" placeholder="100"></div>
+              <div class="field" style="margin:0"><label>So'm — yoki bu yerga</label><input id="som_${code}" type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="${Math.round(100*rateOf(code))}" oninput="som2cur('${code}',this.value)"></div>
+            </div>
+            <div class="field" style="margin:8px 0 0"><label>Kursni qo'lda (internet yo'q bo'lsa)</label>
+              <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="${rateOf(code)}" onchange="setCurRate('${code}',this.value);render()"></div>
+          </div>`).join('')}
+        <div class="mini-hint" style="padding:0">Kurslar O'zbekiston <b>Markaziy bankidan (cbu.uz)</b> olinadi. "CBU dan yangilash" — dollar, yevro va rublni birdan bugungi rasmiy kurs bo'yicha yangilaydi. Internet bo'lmasa, qo'lda kiriting.</div>
       </div></div>
 
     ${role==='manager'?`<div class="panel"><div class="panel-h"><h3>${t('xavfsizlik')}</h3><span class="roleonly">🔒 Faqat menejer</span></div>
@@ -4279,6 +4528,8 @@ async function cloudLoad(){
     if(d.emArchive) emArchive=d.emArchive;
     if(d.emehmonTolerance!=null) emehmonTolerance=d.emehmonTolerance;
     if(d.usdRate) usdRate=d.usdRate;
+    if(d.eurRate) eurRate=d.eurRate;
+    if(d.rubRate) rubRate=d.rubRate;
     if(d.LANG) LANG=d.LANG;
     if(d.statusColors) statusColors=Object.assign(statusColors,d.statusColors);
     lastSavedAt=d.savedAt||0;
@@ -4317,7 +4568,7 @@ async function cloudSave(){
     // 2) sozlamalar
     const conf={ savedAt:Date.now(), base:base.getTime(), ganttStart:ganttStart.getTime(),
       rooms, typeRates, hotelCfg, companies, companyData, statChannels, channels,
-      pendingBookings, emArchive, emehmonTolerance, usdRate, LANG, statusColors, ackedShubha, auditHistory, roomBlocks, shifts,
+      pendingBookings, emArchive, emehmonTolerance, usdRate, eurRate, rubRate, LANG, statusColors, ackedShubha, auditHistory, roomBlocks, shifts,
       seed:(seedDone?SEED_TAG:serverSeedTag)||undefined };   // yuklanmagan bo'lsa ham belgini o'chirmaymiz
     const {error:e2}=await SB.from('settings').upsert({hotel_id:HOTEL_ID,data:conf,updated_at:new Date().toISOString()},{onConflict:'hotel_id'});
     if(e2) throw e2;
@@ -4340,7 +4591,7 @@ let lastFingerprint='';
 function dataFingerprint(){
   try{
     return stays.length+'|'+stays.map(s=>s.id+':'+s.status+':'+s.room+':'+s.price+':'+(s.payments||[]).length+':'+(s.charges||[]).length+':'+s.outDate.getTime()+':'+s.inDate.getTime()).join(',')
-      +'|'+base.getTime()+'|'+rooms.length+'|'+JSON.stringify(typeRates)+'|'+usdRate+'|'+LANG+'|'+hotelCfg.name;
+      +'|'+base.getTime()+'|'+rooms.length+'|'+JSON.stringify(typeRates)+'|'+usdRate+'|'+eurRate+'|'+rubRate+'|'+LANG+'|'+hotelCfg.name;
   }catch(e){ return String(Math.random()); }
 }
 function saveState(){
