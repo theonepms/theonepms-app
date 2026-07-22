@@ -1371,25 +1371,17 @@ function laneFor(room){
     duLanes=Math.max(duLanes,Math.ceil(arr.length/MAXPERLANE));
   });
 
-  /* 2) ODDIY BRONLAR — vaqt bo'yicha joylashadi (kunduzgi bor kunlarda pastroqdan) */
-  const duDays=new Set(Object.keys(duByDay));
+  /* 2) ODDIY BRONLAR — faqat VAQTI to'qnashsa yangi qavat (variant B).
+     ⚠️ "Kunduzgi bor kunga tekkanda majburan pastga tushir" qoidasi OLIB TASHLANDI —
+        to'qnashmasa bron kunduzgilar bilan bir qatorda, yonida qoladi. */
   const laneEnds=[];
   active.filter(s=>!isDayUseOut(s)).forEach(s=>{
     const st=stayStartMs(s), en=Math.max(stayEndMs(s), st+30*60000);
-    // shu bron kunduzgi bor kunga tushsa — kunduzgi qavatlaridan pastda boshlaymiz
-    let minLane=0;
-    for(let d=stripTime(s.inDate).getTime(); d<=stripTime(s.outDate).getTime(); d+=DAY){
-      if(duDays.has(ymd(new Date(d)))){ minLane=duLanes; break; }
-    }
     let placed=false;
-    for(let i=minLane;i<laneEnds.length;i++){
+    for(let i=0;i<laneEnds.length;i++){
       if(st>=(laneEnds[i]||0)-1000){ s._lane=i; laneEnds[i]=en; placed=true; break; }
     }
-    if(!placed){
-      const idx=Math.max(minLane,laneEnds.length);
-      for(let q=laneEnds.length;q<idx;q++) laneEnds[q]=laneEnds[q]||0;
-      s._lane=idx; laneEnds[idx]=en;
-    }
+    if(!placed){ s._lane=laneEnds.length; laneEnds.push(en); }
   });
   const usedLanes=Math.max(duLanes, laneEnds.length);
   canceled.forEach(s=>{ s._lane=usedLanes; });
@@ -1454,6 +1446,9 @@ function renderGanttRows(){
     let bars='';
     // 1) har bir bron uchun gorizontal o'rin (kun birligida) hisoblaymiz
     const geo=[];
+    // "Bir xil kun" holati uchun: har kunda nechta kunduzgi chiqish borligini sanaymiz
+    const duCountByDay={};
+    list.forEach(x=>{ if(isDayUseOut(x)){ const di=Math.round((stripTime(x.inDate)-ganttStart)/DAY); duCountByDay[di]=(duCountByDay[di]||0)+1; } });
     list.forEach(s=>{
       const dayIdx=Math.round((stripTime(s.inDate)-ganttStart)/DAY);
       const span=Math.max(1,Math.round((stripTime(s.outDate)-stripTime(s.inDate))/DAY));
@@ -1461,7 +1456,9 @@ function renderGanttRows(){
       const coF=du?0:0.42;
       const earlyF=s.earlyIn?0.35:0, lateF=s.lateOut?0.5:0;
       const turn=stays.some(x=>x.room===s.room && x.id!==s.id && x.status!=='canceled' && stripTime(x.outDate).getTime()===stripTime(s.inDate).getTime());
-      const startInset=(turn&&!du)?0.55:0;
+      // Bir xil kunda kunduzgi chiqishlar bo'lsa — oddiy bron ¼ bo'laklardan KEYIN boshlanadi (ustma-ust bo'lmasin)
+      const duOffset=du?0:Math.min(3,duCountByDay[dayIdx]||0)*0.25;
+      const startInset=Math.max((turn&&!du)?0.55:0, duOffset);
       if(du && s.status==='out'){
         /* CHIQIB KETGAN kunduzgi — quyida kun bo'yicha ¼ ga bo'linadi */
         const t1=hhToFrac(s.arrTime)||0;
@@ -4630,28 +4627,16 @@ function startCloudSync(){
 }
 
 /* ===== BIR MARTALIK TOZA START — hamma test o'chadi, 1 ta haqiqiy bron qoladi ===== */
-const SEED_TAG='v2026_07_18';
+const SEED_TAG='v2026_07_21_empty';
 async function seedCleanStart(){
   try{
+    // SERVERDAGI barcha test ma'lumot o'chadi
     await SB.from('stays').delete().eq('hotel_id',HOTEL_ID);
     await SB.from('audit_log').delete().eq('hotel_id',HOTEL_ID);
-    stays=[]; auditLog=[];
-    base.setTime(new Date(2026,6,18).getTime());
+    stays=[]; auditLog=[]; roomBlocks=[];
+    // Sana — 21.07.2026, hech qanday bron QOLMAYDI (mutlaqo bo'sh)
+    base.setTime(new Date(2026,6,21).getTime());
     ganttStart=new Date(base.getTime()-2*DAY);
-    const inD=new Date(2026,6,16), outD=new Date(2026,6,19);
-    const NIGHTLY=745800;
-    const s=mkStay({
-      room:'514', firstName:'GEORGII', lastName:'CHERNETSOV',
-      gender:'Erkak', birth:'28.09.1986', citizen:"O'zbekiston", passport:'FP4010612',
-      phone:'', email:'', arrTime:'05:15', premicha:'',
-      inDate:inD, outDate:outD, status:'in',
-      nightly:NIGHTLY, rates:[NIGHTLY,NIGHTLY,NIGHTLY], extra:[], charges:[],
-      payments:[{amount:NIGHTLY*3, method:'naxt', card:'', type:'pay',
-                 time:fmtShort(inD)+' 05:15', ts:new Date(inD), by:'Administrator'}],
-      channel:'walkin'
-    });
-    recalc(s);
-    stays.push(s);
     lastFingerprint=''; seedDone=true;
     await cloudSave();
     const {data:st}=await SB.from('settings').select('data').eq('hotel_id',HOTEL_ID).maybeSingle();
@@ -4660,7 +4645,7 @@ async function seedCleanStart(){
     seedDone=true;
     lastSavedAt=conf.savedAt||Date.now();
     lastFingerprint=dataFingerprint();
-    toast('Dastur tozalandi — 18.07.2026, 1 ta bron (514-xona) ✓',true);
+    toast('Dastur butunlay tozalandi — 21.07.2026, bo\'sh (bron yo\'q) ✓',true);
   }catch(e){ toast('Tozalashda xato: '+(e.message||''),false); }
 }
 
