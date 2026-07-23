@@ -300,12 +300,61 @@ function drawHotel(){
       </div>
     </div>
 
+    ${startCard()}
+
     ${tgCardHtml()}
 
     ${roomCard()}
 
     ${payCard()}`;
   if(lastTag) drawTag();
+}
+
+/* ── 📅 boshlanish sanasi ── */
+function startCard(){
+  const h=sel; if(!h) return '';
+  const sd=h.start_date||'';
+  if(h.started){
+    return `
+      <div class="card">
+        <div class="card-h"><h2>📅 Dastur boshlangan sana</h2><span class="spacer"></span>
+          <span class="tag off">🔒 qulflangan</span></div>
+        <div class="card-b">
+          <div class="mono" style="font-size:20px;font-weight:700;color:var(--brass)">${sd?dmy(sd):'—'}</div>
+          <div class="hint">Bu mehmonxona allaqachon ish boshlagan, shuning uchun sana o'zgartirilmaydi.
+            Agar baribir kerak bo'lsa — dasturga o'zingiz kirib «Serverni tozalash» qiling, shundan keyin sana ochiladi.
+            <b>Diqqat: tozalash barcha mehmon va to'lov ma'lumotini o'chiradi.</b></div>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="card" style="border-color:var(--brass-dim)">
+      <div class="card-h"><h2>📅 Dastur qaysi kundan boshlansin</h2><span class="spacer"></span>
+        <span class="tag ok">hali boshlanmagan</span></div>
+      <div class="card-b">
+        <div class="grid3">
+          <div class="field" style="margin:0"><label>Boshlanish sanasi</label>
+            <input id="sdInp" type="date" value="${sd}"></div>
+        </div>
+        <button class="btn" id="sdBtn" onclick="saveStart()" style="margin-top:12px">Sanani saqlash</button>
+        <div class="hint">Mijozning admini birinchi marta kirganda dastur shu kundan boshlanadi.
+          Shundan keyin sana <b>qulflanadi</b> va faqat nochnoy audit bilan oldinga suriladi.</div>
+      </div>
+    </div>`;
+}
+async function saveStart(){
+  if(!sel) return;
+  const v=$('sdInp').value;
+  if(!v){ toast('Sanani tanlang','bad'); return; }
+  const btn=$('sdBtn'); btn.disabled=true; btn.innerHTML='<span class="spin"></span> Saqlanmoqda';
+  try{
+    await call('hotel-start-date',{id:sel.id, start_date:v});
+    toast('Sana saqlandi','good');
+    await loadHotels(sel.id);
+  }catch(e){
+    toast(e.message,'bad');
+    btn.disabled=false; btn.textContent='Sanani saqlash';
+  }
 }
 
 /* ── 📱 telegram ── */
@@ -679,8 +728,14 @@ function showNewHotel(){
         <div class="field"><label>Kodi</label><input id="hId" class="mono" placeholder="dedeman_hotel"></div>
         <div class="field"><label>Xonalar soni</label><input id="hRooms" type="text" inputmode="numeric" value="30" oninput="this.value=this.value.replace(/[^0-9]/g,'')"></div>
       </div>
+      <div class="grid3">
+        <div class="field"><label>Dastur qaysi kundan boshlansin</label>
+          <input id="hStart" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+      </div>
       <button class="btn" id="hBtn" onclick="createHotel()">Mehmonxona qo'shish</button>
-      <div class="hint"><b>Kodi</b> — ichki nom, keyin o'zgarmaydi. Faqat lotin harflar, raqam va pastki chiziq.</div>
+      <div class="hint"><b>Kodi</b> — ichki nom, keyin o'zgarmaydi. Faqat lotin harflar, raqam va pastki chiziq.<br>
+        <b>Boshlanish sanasi</b> — dastur shu kundan ish boshlaydi. Keyin har kecha «nochnoy audit» bilan bir kun oldinga suriladi.
+        Mehmonxona ishlay boshlagach bu sana <b>qulflanadi</b>.</div>
     </div></div>`;
 }
 function suggestId(){
@@ -696,7 +751,7 @@ async function createHotel(){
   if(!id){ toast('Kodini yozing','bad'); return; }
   if(hotels.some(h=>h.id===id)){ toast('Bu kod band — boshqasini tanlang','bad'); return; }
   const btn=$('hBtn'); btn.disabled=true; btn.innerHTML='<span class="spin"></span> Qo\'shilmoqda';
-  try{ await call('hotel-add',{id,name,rooms}); toast('Mehmonxona qo\'shildi','good'); await loadHotels(id); }
+  try{ await call('hotel-add',{id,name,rooms,start_date:($('hStart').value||'')}); toast('Mehmonxona qo\'shildi','good'); await loadHotels(id); }
   catch(e){ toast(e.message,'bad'); btn.disabled=false; btn.textContent='Mehmonxona qo\'shish'; }
 }
 document.addEventListener('input',e=>{ if(e.target&&e.target.id==='hId') e.target.dataset.touched='1'; });
