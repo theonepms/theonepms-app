@@ -332,6 +332,13 @@ table.data tr:hover td{background:var(--panel-2)}
 .folio-act.danger:hover{background:var(--red-bg);border-color:var(--red)}
 .folio-act.warn{color:var(--amber-ink);border-color:#e8c98a;background:var(--amber-bg)}
 .folio-act.warn:hover{border-color:var(--amber);filter:brightness(1.03)}
+.hotel-picks{display:grid;gap:9px}
+.hotel-pick{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:14px 16px;border:1.5px solid var(--line);border-radius:11px;background:#fff;cursor:pointer;text-align:left;transition:.12s;font-family:inherit;width:100%}
+.hotel-pick b{font-size:15px;font-weight:700;color:var(--txt)}
+.hotel-pick span{font-size:12px;color:var(--txt-3)}
+.hotel-pick:hover:not(:disabled){border-color:var(--brand);background:#f5f8ff}
+.hotel-pick.on{border-color:var(--green);background:var(--green-bg)}
+.hotel-pick:disabled{opacity:.5;cursor:not-allowed}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
 .guestblock{border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:14px;margin-bottom:12px;position:relative;background:var(--panel-2)}
@@ -857,6 +864,47 @@ function enterApp(r){
   buildNav(); go('dashboard');
   startClock();
   tryAutoRate();
+  // 🏢 Super-admin — qaysi mehmonxonaga kirishni o'zi tanlaydi
+  if(isSuper && allHotels.length) setTimeout(pickHotelModal,250);
+}
+/* Mehmonxona tanlash oynasi (super-admin uchun) */
+function pickHotelModal(){
+  if(!isSuper) return;
+  document.getElementById('pickHotelOv')?.remove();
+  const cards=allHotels.map(h=>{
+    const off=h.active===false;
+    return `<button class="hotel-pick${h.id===HOTEL_ID?' on':''}" ${off?'disabled':''} onclick="pickHotel('${h.id}','${(h.name||'').replace(/'/g,"\\'")}')">
+      <b>${h.name}</b>
+      <span>${h.rooms||0} xona · ${off?'⛔ o\'chirilgan':'faol'}</span>
+    </button>`;
+  }).join('');
+  document.body.insertAdjacentHTML('beforeend',`
+    <div class="overlay" id="pickHotelOv" style="z-index:150">
+      <div class="modal" style="max-width:520px">
+        <div class="modal-h"><h3>🏢 Qaysi mehmonxonaga kirasiz?</h3></div>
+        <div class="modal-b">
+          <div class="mini-hint" style="padding:0 0 12px">Siz super-adminsiz — istalgan mehmonxonaga kira olasiz. Keyin ham «Mehmonxonalar» bo'limidan almashtirasiz.</div>
+          <div class="hotel-picks">${cards}</div>
+        </div>
+      </div></div>`);
+}
+async function pickHotel(id,name){
+  document.getElementById('pickHotelOv')?.remove();
+  if(id===HOTEL_ID){ toast(`${name} — ochildi ✓`,true); return; }
+  const h=allHotels.find(x=>x.id===id)||{};
+  try{ await cloudSave(); }catch(e){}
+  HOTEL_ID=id; myHotel=id; myHotelName=name;
+  stays=[]; auditLog=[]; roomBlocks=[]; shifts=[]; pendingBookings=[]; emArchive={};
+  rooms=defaultRooms(h.rooms||30);
+  hotelCfg={name:name, currency:'UZS', rooms:(h.rooms||30)};
+  typeRates={std:400000,twin:500000,dlx:700000,lux:1200000};
+  companies=['Walk-in (ko\'chadan)','Booking.com','To\'g\'ridan-to\'g\'ri','Telefon orqali'];
+  lastFingerprint=''; lastSavedAt=0; cloudLoadedOK=false;
+  await cloudLoad();
+  const p=document.getElementById('hotelPill');
+  if(p) p.innerHTML=`🏢 ${hotelCfg.name} <span style="opacity:.6">· super-admin</span>`;
+  page='dashboard'; render(); buildNav();
+  toast(`${name} — ochildi ✓`,true);
 }
 function startClock(){
   const tick=()=>{ const c=document.getElementById('topClock'); if(c)c.textContent='🕐 '+uzTime()+' (Toshkent)'; };
