@@ -581,7 +581,7 @@ table.data tr:hover td{background:var(--panel-2)}
   <main class="main">
     <header class="topbar">
       <h2 id="pageTitle">Shaxmatka</h2>
-      <span class="pill" id="hotelPill">Grand Capital Hotel · 51 xona</span>
+      <span class="pill" id="hotelPill">…</span>
       <span class="pill" id="topClock" style="font-family:'JetBrains Mono';background:#eff4ff;color:var(--brand-ink);border-color:#c0d3fb">🕐 --:--</span>
       <div class="spacer"></div>
       <div class="toptools">
@@ -731,7 +731,7 @@ function roleOfEmail(email){
 }
 /* ✅ ASOSIY usul — kim qaysi mehmonxonada va qanaqa rolda ekani BAZADAN olinadi.
    Endi rol email nomiga bog'liq emas — hotel_users jadvali hal qiladi. */
-let myHotel=null, myHotelName='', verifiedRole=null, isSuper=false, allHotels=[];
+let myHotel=null, myHotelName='', myHotelRooms=0, verifiedRole=null, isSuper=false, allHotels=[];
 async function fetchMembership(userId){
   try{
     // 1) SUPER-ADMIN mi? (hamma mehmonxonani ko'radi)
@@ -745,11 +745,12 @@ async function fetchMembership(userId){
     }
     // 2) Oddiy foydalanuvchi — qaysi mehmonxonada, qanaqa rolda
     const {data,error}=await SB.from('hotel_users')
-      .select('hotel_id, role, hotels(name)').eq('user_id',userId).limit(1).maybeSingle();
+      .select('hotel_id, role, hotels(name,rooms)').eq('user_id',userId).limit(1).maybeSingle();
     if(error) return {ok:false};                       // baza javob bermadi → zaxira usul
     if(!data)  return {ok:true, found:false};          // baza javob berdi, lekin biriktirilmagan
     return {ok:true, found:true, super:false, hotel:data.hotel_id, role:data.role,
-            name:(data.hotels&&data.hotels.name)||data.hotel_id};
+            name:(data.hotels&&data.hotels.name)||data.hotel_id,
+            roomCount:(data.hotels&&data.hotels.rooms)||0};
   }catch(e){ return {ok:false}; }
 }
 async function loginNext(){
@@ -774,7 +775,7 @@ async function loginNext(){
     if(mem.ok && mem.found){
       realRole=mem.role;
       isSuper=!!mem.super;
-      myHotel=mem.hotel; myHotelName=mem.name;
+      myHotel=mem.hotel; myHotelName=mem.name; myHotelRooms=mem.roomCount||0;
       HOTEL_ID=mem.hotel;                 // dastur endi shu mehmonxona ma'lumotini oladi
     } else if(mem.ok && !mem.found){
       await SB.auth.signOut(); pendingUser=null;
@@ -812,15 +813,20 @@ async function loginNext(){
 async function afterLogin(r){
   const btn=document.getElementById('loginBtn');
   if(btn){btn.disabled=true;btn.textContent='Ma\'lumot yuklanmoqda...';}
-  // Super-admin: kirilayotgan mehmonxonaning standart sozlamasini qo'yamiz (settings bo'lmasa ham to'g'ri chiqsin)
-  if(isSuper && myHotel){
-    const h=allHotels.find(x=>x.id===myHotel);
-    if(h && myHotel!=='grand_capital'){
-      rooms=defaultRooms(h.rooms||30);
-      hotelCfg={name:h.name, currency:'UZS', rooms:(h.rooms||30)};
+  // 🏢 Mehmonxona nomi HAR DOIM bazadan olinadi — super-admin ham, oddiy xodim ham
+  if(myHotel){
+    let hName=myHotelName, hRooms=myHotelRooms;
+    if(isSuper){
+      const h=allHotels.find(x=>x.id===myHotel);
+      if(h){ hName=h.name; hRooms=h.rooms||0; }
     }
+    if(hRooms>0 && myHotel!=='grand_capital') rooms=defaultRooms(hRooms);
+    hotelCfg={name:hName||myHotel, currency:'UZS', rooms:hRooms||rooms.length};
   }
   await cloudLoad();          // serverdan ma'lumotni tortamiz
+  // ⚠️ cloudLoad eski sozlamadagi nomni tiklab yuborishi mumkin — nom baza bo'yicha qat'iy
+  if(myHotelName) hotelCfg.name=myHotelName;
+  setHotelPill();
   try{ await tgCheck(); }catch(e){}
   enterApp(r);
   startCloudSync();           // boshqa admin o'zgartirsa — ko'rinadi
@@ -942,6 +948,15 @@ async function mfaVerify(){
   if(v===mfaCur){ clearInterval(mfaTimer); await afterLogin('manager'); }
   else toast('Kod noto\'g\'ri yoki eskirgan. Ekrandagi kodni kiriting.',false);
 }
+/* 🏢 Tepadagi mehmonxona yorlig'i — nom bazadan, hech qayerda qotib yozilmagan */
+function setHotelPill(){
+  const p=document.getElementById('hotelPill'); if(!p) return;
+  const nm=myHotelName||hotelCfg.name||'—';
+  const rc=rooms.length||hotelCfg.rooms||0;
+  p.innerHTML=isSuper
+    ? `🏢 ${nm} <span style="opacity:.6">· super-admin</span>`
+    : `🏢 ${nm} · ${rc} xona`;
+}
 function enterApp(r){
   // ⚠️ Xavfsizlik: rol har doim tasdiqlangan manbadan (baza) olinadi
   if(verifiedRole) r=verifiedRole;
@@ -992,8 +1007,8 @@ async function pickHotel(id,name){
   companies=['Walk-in (ko\'chadan)','Booking.com','To\'g\'ridan-to\'g\'ri','Telefon orqali'];
   lastFingerprint=''; lastSavedAt=0; cloudLoadedOK=false;
   await cloudLoad();
-  const p=document.getElementById('hotelPill');
-  if(p) p.innerHTML=`🏢 ${hotelCfg.name} <span style="opacity:.6">· super-admin</span>`;
+  if(myHotelName) hotelCfg.name=myHotelName;   // sozlamadagi eski nom ustun kelmasin
+  setHotelPill();
   page='dashboard'; render(); buildNav();
   toast(`${name} — ochildi ✓`,true);
 }
@@ -1512,10 +1527,7 @@ function render(){
       if(_winY) window.scrollTo(0,_winY);
     }catch(e){}
   };
-  if(isSuper){
-    const p=document.getElementById('hotelPill');
-    if(p) p.innerHTML=`🏢 ${myHotelName||hotelCfg.name} <span style="opacity:.6">· super-admin</span>`;
-  }
+  setHotelPill();
   if(page==='hotellar') v.innerHTML=renderHotels();
   else if(page==='dashboard') v.innerHTML=renderDashboard();
   else if(page==='shaxmatka') v.innerHTML=renderGantt();
@@ -3243,7 +3255,7 @@ function openInvoice(id){
   M.innerHTML=`<div class="modal"><div class="modal-h"><h3>${t('invoice')}</h3><span class="pill">${inv}</span><button class="x" style="margin-left:auto" onclick="document.getElementById('invOverlay').remove()">✕</button></div>
     <div class="modal-b" id="invPrint">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--ink);padding-bottom:12px;margin-bottom:14px">
-        <div><div style="font-family:'Space Grotesk';font-weight:700;font-size:18px">Grand Capital Hotel</div>
+        <div><div style="font-family:'Space Grotesk';font-weight:700;font-size:18px">${hotelCfg.name}</div>
           <div style="font-size:12px;color:var(--txt-2)">Chirchiq sh. · +998 71 200 00 00</div></div>
         <div style="text-align:right;font-size:12px;color:var(--txt-2)">${inv}<br>${fmt(base)}</div>
       </div>
@@ -4178,8 +4190,8 @@ async function switchHotel(id,name){
   companies=['Walk-in (ko\'chadan)','Booking.com','To\'g\'ridan-to\'g\'ri','Telefon orqali'];
   lastFingerprint=''; lastSavedAt=0; cloudLoadedOK=false;
   await cloudLoad();          // agar bu hotelning o'z sozlamasi bo'lsa — ustiga yoziladi
-  const p=document.getElementById('hotelPill');
-  if(p) p.innerHTML=`🏢 ${hotelCfg.name} <span style="opacity:.6">· super-admin</span>`;
+  if(myHotelName) hotelCfg.name=myHotelName;   // sozlamadagi eski nom ustun kelmasin
+  setHotelPill();
   page='dashboard'; render(); buildNav();
   toast(`${name} — ochildi ✓`,true);
 }
@@ -4261,7 +4273,7 @@ function renderDashboard(){
   return `<div class="dash">
     <div class="hero"><div class="hero-row">
       <div class="hero-l">
-        <div class="eyebrow">${fmt(base)} · Grand Capital Hotel</div>
+        <div class="eyebrow">${fmt(base)} · ${hotelCfg.name}</div>
         <h1>${t('salom')}, ${role==='admin'?'Administrator':'Menejer'}!</h1>
         <p>Bugun ${m.occ} ta xona band, ${m.arrivals.length} ta kelish va ${m.departures.length} ta chiqish kutilmoqda. Bo'sh xonalar: ${freeCount} ta.</p>
         <div class="hero-actions">
@@ -4473,7 +4485,7 @@ function renderStatistika(){
 }
 
 /* ================= SOZLAMALAR ================= */
-let hotelCfg={name:'Grand Capital Hotel',currency:'UZS',rooms:rooms.length};
+let hotelCfg={name:'',currency:'UZS',rooms:rooms.length};
 function saveCfg(){toast('Sozlamalar saqlandi ✓',true);}
 let usdRate=12680; // 1 USD = ... so'm (Markaziy bank kursi)
 let eurRate=13800; // 1 EUR = ... so'm
@@ -4735,8 +4747,8 @@ function renderSettings(){
 
     <div class="panel"><div class="panel-h"><h3>${t('kompaniya')}</h3></div>
       <div class="panel-b" style="padding:18px 20px">
-        <div class="field"><label>${t('hotelnomi')}</label><input value="${hotelCfg.name}" oninput="hotelCfg.name=this.value"></div>
-        <button class="btn btn-primary" style="width:auto;padding:10px 20px" onclick="saveCfg()">${t('saqlash')}</button>
+        <div class="field"><label>${t('hotelnomi')}</label><input value="${hotelCfg.name}" disabled style="opacity:.7;cursor:not-allowed"></div>
+        <div class="mini-hint" style="padding:0">🔒 Nom operator panelida belgilanadi — bu yerdan o'zgartirib bo'lmaydi.</div>
       </div></div>
 
     <div class="panel"><div class="panel-h"><h3>${P("Shaxmatka ranglari")}</h3><span class="roleonly">Qat'iy belgilangan</span></div>
@@ -5234,6 +5246,8 @@ async function cloudLoad(){
     if(d.rooms) rooms=d.rooms;
     if(d.typeRates) typeRates=d.typeRates;
     if(d.hotelCfg) hotelCfg=d.hotelCfg;
+    // 🏢 Nom har doim hotels jadvalidan — eski sozlamada boshqa nom qolgan bo'lsa ham
+    if(myHotelName) hotelCfg.name=myHotelName;
     if(d.companies) companies=d.companies;
     if(d.companyData) companyData=d.companyData;
     if(d.statChannels) statChannels=d.statChannels;
