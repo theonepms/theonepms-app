@@ -4952,7 +4952,8 @@ async function sendAuditToTelegram(dayStr){
     const qarz=stays.filter(s=>balance(s)>0).reduce((a,s)=>a+balance(s),0);
 
     // ── admin nazorati: o'sha kungi sezgir amallar ──
-    const acts=auditLog.filter(a=>(a.day||'')===dayY);
+    const tKey=a=>{ const m=/(\d{1,2}):(\d{2})/.exec(a.time||''); return m?(+m[1]*60+ +m[2]):0; };
+    const acts=auditLog.filter(a=>(a.day||'')===dayY).slice().sort((x,y)=>tKey(x)-tKey(y));
     const sezgir=acts.filter(a=>['warn','refund','correct','edit','move'].includes(a.type));
     let nazorat='';
     if(sezgir.length){
@@ -4960,6 +4961,16 @@ async function sendAuditToTelegram(dayStr){
         sezgir.slice(0,25).map(a=>`• ${a.time||''} — ${a.by||''}\n  ${a.text||''}${a.reason?'\n  💬 '+a.reason:''}`).join('\n');
       if(sezgir.length>25) nazorat+=`\n… va yana ${sezgir.length-25} ta (Excelda to'liq)`;
     } else nazorat='\n\n✅ Sezgir amal yo\'q — toza kun';
+
+    // ── smena (kassa) tekshiruvi ──
+    const sm=(shifts||[]).find(x=>x.day===dayStr||x.day===dayY);
+    let kassa='';
+    if(sm){
+      const dC=(+sm.cashReal||0)-(+sm.cashExpect||0), dK=(+sm.cardReal||0)-(+sm.cardExpect||0);
+      kassa=(dC===0&&dK===0)
+        ? `\n\n💼 KASSA: ✅ to'g'ri — farq yo'q`
+        : `\n\n💼 KASSA: 🚨 FARQ BOR\n💵 Naqd: ${dC>0?'+':''}${money(dC)}\n💳 Karta: ${dK>0?'+':''}${money(dK)}${sm.note?'\n💬 '+sm.note:''}`;
+    } else kassa=`\n\n💼 KASSA: ⚠️ smena yopilmagan (tekshirilmagan)`;
 
     const text=
 `🌙 NOCHNOY AUDIT — ${hotelCfg.name}
@@ -4977,45 +4988,53 @@ async function sendAuditToTelegram(dayStr){
 
 🛏 Band xonalar: ${band}/${rooms.length}
 ➡️ Kelgan: ${kelgan} · ⬅️ Ketgan: ${ketgan}
-⚠️ Qarzdorlik: ${money(qarz)}${nazorat}`;
+⚠️ Qarzdorlik: ${money(qarz)}${kassa}${nazorat}`;
 
-    // ── Excel (jadval ko'rinishida) ──
-    const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;');
-    const th=a=>`<tr>${a.map(x=>`<th style="background:#2a5bd0;color:#fff;border:1px solid #ccc;padding:6px">${esc(x)}</th>`).join('')}</tr>`;
-    const tr=a=>`<tr>${a.map(x=>`<td style="border:1px solid #ccc;padding:6px">${esc(x)}</td>`).join('')}</tr>`;
+    // ── Haqiqiy XLSX fayl (telefonda ham ochiladi) ──
+    const wb=XLSX.utils.book_new();
     const yashovchi=stays.filter(s=>s.status==='in');
-    const html='<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'+
-      `<h2 style="font-family:Arial">${esc(hotelCfg.name)} — Nochnoy audit</h2>`+
-      `<div style="font-family:Arial;font-size:12px;color:#666">Yopilgan kun: ${dayStr} · Kim: ${kim} · Soat: ${soat}</div><br>`+
-      '<h3 style="font-family:Arial">Kun yakuni</h3><table cellspacing="0">'+
-        th(['Ko\'rsatkich','Qiymat'])+
-        tr(['Naqd',naqd])+tr(['Karta',karta])+tr(['Vozvrat',vozvrat])+tr(['Jami',naqd+karta-vozvrat])+
-        tr(['Band xonalar',band+'/'+rooms.length])+tr(['Kelgan',kelgan])+tr(['Ketgan',ketgan])+tr(['Qarzdorlik',qarz])+
-      '</table><br>'+
-      `<h3 style="font-family:Arial">Admin nazorati — sezgir amallar (${sezgir.length})</h3><table cellspacing="0">`+
-        th(['Vaqt','Kim','Xona','Mehmon','Amal','Summa','Sabab'])+
-        (sezgir.length?sezgir.map(a=>tr([a.time||'',a.by||'',a.room||'',a.guest||'',a.text||'',a.amount||0,a.reason||''])).join('')
-                      :tr(['—','—','—','—','Sezgir amal yo\'q','',''])) +
-      '</table><br>'+
-      `<h3 style="font-family:Arial">Yashayotgan mehmonlar (${yashovchi.length})</h3><table cellspacing="0">`+
-        th(['Xona','Mehmon','Kelgan','Chiqish','Hisob','Qarz'])+
-        (yashovchi.length?yashovchi.map(s=>tr([s.room,(s.firstName||'')+' '+(s.lastName||''),fmt(s.inDate),fmt(s.outDate),totalDue(s),balance(s)])).join('')
-                         :tr(['—','—','—','—','','']))+
-      '</table><br>'+
-      `<h3 style="font-family:Arial">Kun amallari — hammasi (${acts.length})</h3><table cellspacing="0">`+
-        th(['Vaqt','Kim','Xona','Mehmon','Amal','Summa','Sabab'])+
-        (acts.length?acts.map(a=>tr([a.time||'',a.by||'',a.room||'',a.guest||'',a.text||'',a.amount||0,a.reason||''])).join('')
-                    :tr(['—','—','—','—','Amal yo\'q','','']))+
-      '</table></body></html>';
+    const A=(rows)=>XLSX.utils.aoa_to_sheet(rows);
 
-    // UTF-8 → base64 (kirill/lotin harflar buzilmasin)
-    const bytes=new TextEncoder().encode('\ufeff'+html);
-    let bin=''; bytes.forEach(b=>bin+=String.fromCharCode(b));
-    const b64=btoa(bin);
+    const sh1=A([
+      [hotelCfg.name+' — Nochnoy audit'],
+      ['Yopilgan kun',dayStr],['Yangi kun',fmt(base)],['Kim yopdi',kim],['Soat',soat],
+      [],
+      ['Ko\'rsatkich','Qiymat'],
+      ['Naqd (so\'m)',naqd],['Karta (so\'m)',karta],['Vozvrat (so\'m)',vozvrat],
+      ['JAMI (so\'m)',naqd+karta-vozvrat],
+      ['Band xonalar',band+' / '+rooms.length],['Kelgan',kelgan],['Ketgan',ketgan],
+      ['Qarzdorlik (so\'m)',qarz],
+    ]);
+    sh1['!cols']=[{wch:26},{wch:22}];
+    XLSX.utils.book_append_sheet(wb,sh1,'Kun yakuni');
+
+    const hdr=['Vaqt','Kim','Xona','Mehmon','Amal','Summa','Sabab'];
+    const sh2=A([hdr].concat(sezgir.length
+      ? sezgir.map(a=>[a.time||'',a.by||'',a.room||'',a.guest||'',a.text||'',+a.amount||0,a.reason||''])
+      : [['—','—','—','—','Sezgir amal yo\'q','','']]));
+    sh2['!cols']=[{wch:18},{wch:16},{wch:8},{wch:24},{wch:60},{wch:14},{wch:30}];
+    XLSX.utils.book_append_sheet(wb,sh2,'Admin nazorati');
+
+    const sh3=A([['Xona','Mehmon','Kelgan','Chiqish','Hisob (so\'m)','Qarz (so\'m)']].concat(
+      yashovchi.length
+        ? yashovchi.map(s=>[s.room,(s.firstName||'')+' '+(s.lastName||''),fmt(s.inDate),fmt(s.outDate),totalDue(s),balance(s)])
+        : [['—','—','—','—','','']]));
+    sh3['!cols']=[{wch:8},{wch:26},{wch:13},{wch:13},{wch:16},{wch:16}];
+    XLSX.utils.book_append_sheet(wb,sh3,'Yashovchilar');
+
+    const sh4=A([hdr].concat(acts.length
+      ? acts.map(a=>[a.time||'',a.by||'',a.room||'',a.guest||'',a.text||'',+a.amount||0,a.reason||''])
+      : [['—','—','—','—','Amal yo\'q','','']]));
+    sh4['!cols']=sh2['!cols'];
+    XLSX.utils.book_append_sheet(wb,sh4,'Kun amallari');
+
+    const b64=XLSX.write(wb,{bookType:'xlsx',type:'base64'});
 
     const res=await tgCall('audit-report',{
       hotel:HOTEL_ID, text,
-      file_name:`Nochnoy_audit_${dayY}.xls`, file_b64:b64
+      file_name:`Nochnoy_audit_${dayY}.xlsx`,
+      file_mime:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      file_b64:b64
     });
     if(res && res.ok) toast(`Hisobot Telegramga yuborildi (${res.sent||1} ta) ✓`,true);
     else if(res && res.error==='no_manager') toast('Hisobot yuborilmadi — menejer Telegramni ulamagan.',false);
