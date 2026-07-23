@@ -549,11 +549,12 @@ table.data tr:hover td{background:var(--panel-2)}
       <div id="loginStep2" class="hidden mfa-box">
         <div style="font-weight:600;margin-bottom:2px">MFA tasdiqlash</div>
         <div id="mfaWarn" style="background:#fef3d6;color:#8a5a00;padding:9px 12px;border-radius:8px;font-size:12px;margin:6px 0"></div>
-        <div class="mfa-note">Kod har daqiqada yangilanadi va faqat menejerga boradi.</div>
-        <div class="mfa-code" id="mfaCode">•••••</div>
-        <div class="mfa-timer"><i id="mfaBar" style="width:100%"></i></div>
-        <div class="field"><label>Kodni kiriting</label><input id="mfaIn" class="mono" style="text-align:center;letter-spacing:6px;font-size:18px" maxlength="5" placeholder="00000"></div>
+        <div class="mfa-note" id="mfaNote">Kod Telegram'ga yuborildi.</div>
+        <div class="mfa-code" id="mfaCode" style="display:none">•••••</div>
+        <div class="mfa-timer" id="mfaTimerBox" style="display:none"><i id="mfaBar" style="width:100%"></i></div>
+        <div class="field"><label>Kodni kiriting</label><input id="mfaIn" class="mono" style="text-align:center;letter-spacing:6px;font-size:18px" maxlength="6" placeholder="000000" onkeydown="if(event.key==='Enter')mfaVerify()"></div>
         <button class="btn btn-primary" onclick="mfaVerify()">Tasdiqlash</button>
+        <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="mfaResend" onclick="mfaResend()">↻ Kodni qayta yuborish</button>
         <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="backToStep1()">Orqaga</button>
       </div>
       <div style="text-align:center;margin-top:16px">
@@ -820,6 +821,7 @@ async function afterLogin(r){
     }
   }
   await cloudLoad();          // serverdan ma'lumotni tortamiz
+  try{ await tgCheck(); }catch(e){}
   enterApp(r);
   startCloudSync();           // boshqa admin o'zgartirsa — ko'rinadi
   if(btn){btn.disabled=false;btn.textContent='Kirish';}
@@ -831,13 +833,90 @@ async function doLogout(){
   location.reload();
 }
 function backToStep1(){ clearInterval(mfaTimer); document.getElementById('loginStep2').classList.add('hidden'); document.getElementById('loginStep1').classList.remove('hidden'); }
+/* ═══════════ 📱 TELEGRAM ═══════════ */
+const TG_URL = SB_URL + '/functions/v1/tg';
+async function tgCall(action, extra){
+  if(!SB) throw new Error('server yo\'q');
+  const { data:{ session } } = await SB.auth.getSession();
+  const tok = session ? session.access_token : '';
+  const r = await fetch(TG_URL, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+tok },
+    body: JSON.stringify(Object.assign({action}, extra||{}))
+  });
+  return await r.json();
+}
+let tgLinked=false, tgUser='', tgCode='', mfaViaTelegram=false;
+/* Ulanish holatini tekshirish */
+async function tgCheck(){
+  try{ const r=await tgCall('link-status');
+    tgLinked=!!(r&&r.linked); tgUser=(r&&r.username)||''; }
+  catch(e){ tgLinked=false; }
+}
+/* Ulash kodi olish */
+async function tgGetCode(){
+  try{
+    const r=await tgCall('link-code',{hotel:HOTEL_ID});
+    if(r&&r.code){ tgCode=r.code; render(); toast('Kod tayyor — botga yuboring',true); }
+    else toast('Kod olinmadi: '+((r&&r.error)||''),false);
+  }catch(e){ toast('Xato: '+(e.message||''),false); }
+}
+/* Ulanishni uzish */
+async function tgUnlink(){
+  if(!confirm('Telegram uzilsinmi?\n\nKirish kodlari va hisobotlar kelmay qoladi.')) return;
+  try{ await tgCall('unlink'); tgLinked=false; tgCode=''; render();
+    toast('Telegram uzildi',true); }
+  catch(e){ toast('Xato: '+(e.message||''),false); }
+}
+/* Bot bilan bog'lagandan keyin — qayta tekshirish */
+async function tgRecheck(){
+  await tgCheck(); if(tgLinked) tgCode='';
+  render();
+  toast(tgLinked?'✅ Telegram ulandi':'Hali ulanmagan — kodni botga yuboring',tgLinked);
+}
+
+/* ── MFA (Telegram orqali — HAQIQIY himoya) ── */
 function genMFA(){ return String(Math.floor(Math.random()*90000)+10000); }
-function startMFA(){
-  mfaCur=genMFA(); document.getElementById('mfaCode').textContent=mfaCur;
-  let t=60; document.getElementById('mfaBar').style.width='100%';
+async function startMFA(){
+  const note=document.getElementById('mfaNote');
+  const codeBox=document.getElementById('mfaCode');
+  const timerBox=document.getElementById('mfaTimerBox');
+  const resend=document.getElementById('mfaResend');
+  const warn=document.getElementById('mfaWarn');
+  if(note) note.textContent='Kod yuborilmoqda...';
+  if(codeBox) codeBox.style.display='none';
+  if(timerBox) timerBox.style.display='none';
   clearInterval(mfaTimer);
-  mfaTimer=setInterval(()=>{ t--; document.getElementById('mfaBar').style.width=(t/60*100)+'%';
-    if(t<=0){ mfaCur=genMFA(); document.getElementById('mfaCode').textContent=mfaCur; t=60; } },1000);
+  try{
+    const res=await tgCall('mfa-send');
+    if(res && res.ok){
+      // ✅ HAQIQIY MFA — kod faqat Telegramda
+      mfaViaTelegram=true;
+      if(note) note.innerHTML='🔐 Kod <b>Telegram</b>ga yuborildi. 3 daqiqa amal qiladi.';
+      if(resend) resend.style.display='';
+      if(warn) warn.innerHTML='✓ <b>Menejer</b> akkaunti tasdiqlandi. Telegramdagi kodni kiriting.';
+      const mi=document.getElementById('mfaIn'); if(mi){ mi.value=''; mi.focus(); }
+      return;
+    }
+    throw new Error(res && res.error || 'no_telegram');
+  }catch(e){
+    // ⚠️ Telegram ulanmagan — eski usul (qulflanib qolmasin)
+    mfaViaTelegram=false;
+    mfaCur=genMFA();
+    if(codeBox){ codeBox.style.display=''; codeBox.textContent=mfaCur; }
+    if(timerBox) timerBox.style.display='';
+    if(resend) resend.style.display='none';
+    if(note) note.innerHTML='⚠️ Telegram ulanmagan — kod ekranda. <b>Sozlamalardan Telegramni ulang.</b>';
+    let t=60; const bar=document.getElementById('mfaBar'); if(bar) bar.style.width='100%';
+    mfaTimer=setInterval(()=>{ t--; if(bar) bar.style.width=(t/60*100)+'%';
+      if(t<=0){ mfaCur=genMFA(); if(codeBox) codeBox.textContent=mfaCur; t=60; } },1000);
+  }
+}
+async function mfaResend(){
+  const b=document.getElementById('mfaResend');
+  if(b){ b.disabled=true; b.textContent='Yuborilmoqda...'; }
+  await startMFA();
+  if(b){ b.disabled=false; b.textContent='↻ Kodni qayta yuborish'; }
 }
 async function mfaVerify(){
   const v=document.getElementById('mfaIn').value.trim();
@@ -846,6 +925,18 @@ async function mfaVerify(){
     toast("Bu akkaunt menejer emas. Kirish rad etildi.",false);
     try{ if(SB) await SB.auth.signOut(); }catch(e){}
     pendingUser=null; clearInterval(mfaTimer); backToStep1();
+    return;
+  }
+  if(mfaViaTelegram){
+    // ✅ HAQIQIY tekshiruv — kod SERVERDA solishtiriladi (brauzerda kod yo'q)
+    try{
+      const res=await tgCall('mfa-verify',{code:v});
+      if(res && res.ok){ clearInterval(mfaTimer); await afterLogin('manager'); return; }
+      const r=(res&&res.reason)||'';
+      toast(r==='expired'?'Kod eskirgan — qayta yuboring.'
+           :r==='too_many'?'Juda ko\'p urinish. Kodni qayta yuboring.'
+           :'Kod noto\'g\'ri.',false);
+    }catch(e){ toast('Ulanish xatosi: '+(e.message||''),false); }
     return;
   }
   if(v===mfaCur){ clearInterval(mfaTimer); await afterLogin('manager'); }
@@ -4507,6 +4598,35 @@ function renderSettings(){
   const langBtn=(code,label,flag)=>`<button class="rolebtn ${LANG===code?'on':''}" style="display:flex;align-items:center;gap:10px" onclick="setLang('${code}')">
     <span style="font-size:20px">${flag}</span><div><b>${label}</b><span>${code.toUpperCase()}</span></div></button>`;
 
+  /* ═══ 📱 TELEGRAM ULASH ═══ */
+  const tgPanel=(role==='manager'||role==='admin')?`
+    <div class="panel"><div class="panel-h"><h3>📱 Telegram</h3><span class="spacer"></span>
+      ${tgLinked?'<span class="tag paid">Ulangan</span>':'<span class="tag" style="background:var(--amber-bg);color:var(--amber-ink)">Ulanmagan</span>'}</div>
+      <div class="panel-b" style="padding:18px 20px">
+        ${tgLinked?`
+          <div class="arr-item"><div class="who"><b>✅ Telegram ulangan${tgUser?' — @'+tgUser:''}</b>
+            <span>Kirish kodlari va ${role==='manager'?'nochnoy audit hisobotlari':'bildirishnomalar'} shu yerga keladi.</span></div></div>
+          <button class="btn btn-ghost" style="width:auto;padding:9px 18px;margin-top:10px;color:var(--red-ink);border-color:#f0c2c2" onclick="tgUnlink()">Uzish</button>
+        `:`
+          <div class="mini-hint" style="padding:0 0 12px;line-height:1.6">
+            Telegram ulansa: <b>kirish kodi</b> ekranda emas, telefoningizga keladi${role==='manager'?" — va har kecha <b>nochnoy audit hisoboti</b> Excel bilan birga jo'natiladi":''}.</div>
+          ${tgCode?`
+            <div style="background:var(--green-bg);border:1px solid #a8d5ba;border-radius:11px;padding:16px;text-align:center;margin-bottom:12px">
+              <div style="font-size:12.5px;color:var(--green-ink);margin-bottom:8px">Shu kodni <b>@theonepms_bot</b> ga yuboring:</div>
+              <div style="font-family:var(--mono);font-size:30px;font-weight:700;letter-spacing:6px;color:var(--green-ink)">${tgCode}</div>
+              <div style="font-size:11.5px;color:var(--txt-3);margin-top:8px">10 daqiqa amal qiladi</div>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <a class="btn btn-primary" style="width:auto;padding:10px 20px;text-decoration:none;display:inline-flex;align-items:center" href="https://t.me/theonepms_bot?start=${tgCode}" target="_blank">📱 Botni ochish</a>
+              <button class="btn btn-ghost" style="width:auto;padding:10px 20px" onclick="tgRecheck()">↻ Ulandimi — tekshirish</button>
+            </div>
+            <div class="mini-hint" style="padding:10px 0 0">«Botni ochish» bosilsa — kod avtomatik yuboriladi. Yoki botni o'zingiz ochib, kodni yozib jo'nating.</div>
+          `:`
+            <button class="btn btn-primary" style="width:auto;padding:11px 24px" onclick="tgGetCode()">📱 Telegramni ulash</button>
+          `}
+        `}
+      </div></div>`:'';
+
   /* ═══ 🏠 XONALAR — qo'shish / tahrirlash / o'chirish ═══ */
   const roomRows=rooms.length? rooms.map((r,i)=>{
     const busy=stays.filter(s=>s.room===r.n && s.status!=='canceled' && s.status!=='out').length;
@@ -4553,6 +4673,7 @@ function renderSettings(){
     <td style="color:var(--txt-3);font-size:12px">${rooms.filter(r=>r.t===k).length} ta xona</td></tr>`).join('');
 
   return `<div style="max-width:760px">
+    ${tgPanel}
     ${roomsPanel}
     <div class="panel"><div class="panel-h"><h3>${P("Ma'lumot va zaxira")}</h3><span class="roleonly">Server</span></div>
       <div class="panel-b" style="padding:16px 20px">
@@ -4772,8 +4893,101 @@ function runAudit(){
   auditHistory.unshift({day:oldDay,newDay:fmt(base),at:uzTime(),by:role==='admin'?'Administrator':'Menejer',ts:Date.now()});
   if(auditHistory.length>120) auditHistory.length=120;
   lastFingerprint=''; saveState();
+  sendAuditToTelegram(oldDay);        // 📱 menejerga hisobot + Excel
   render(); buildNav(); go('dashboard');
   toast('Nochnoy audit yakunlandi. Yangi kun: '+fmt(base)+' ✓',true);
+}
+
+/* ═══ 📱 NOCHNOY AUDIT HISOBOTI — menejer Telegramiga ═══ */
+async function sendAuditToTelegram(dayStr){
+  try{
+    const dayY=dayStr.split('.').reverse().join('-');       // 22.07.2026 → 2026-07-22
+    const kim=role==='admin'?'Administrator':(role==='manager'?'Menejer':'Owner');
+    const soat=uzTime();
+
+    // ── kun raqamlari ──
+    const dayMs=new Date(+dayY.split('-')[0],+dayY.split('-')[1]-1,+dayY.split('-')[2]).getTime();
+    let naqd=0, karta=0, vozvrat=0;
+    stays.forEach(s=>(s.payments||[]).forEach(p=>{
+      if(!p.ts || ymd(new Date(p.ts))!==dayY) return;
+      const a=+p.amount||0;
+      if(p.type==='ref'||p.type==='refund'){ vozvrat+=a; return; }
+      if(p.method==='naxt') naqd+=a; else if(p.method==='karta') karta+=a; else naqd+=a;
+    }));
+    const kelgan=stays.filter(s=>stripTime(s.inDate).getTime()===dayMs).length;
+    const ketgan=stays.filter(s=>s.status==='out'&&stripTime(s.checkoutDate||s.outDate).getTime()===dayMs).length;
+    const band=stays.filter(s=>s.status==='in').length;
+    const qarz=stays.filter(s=>balance(s)>0).reduce((a,s)=>a+balance(s),0);
+
+    // ── admin nazorati: o'sha kungi sezgir amallar ──
+    const acts=auditLog.filter(a=>(a.day||'')===dayY);
+    const sezgir=acts.filter(a=>['warn','refund','correct','edit','move'].includes(a.type));
+    let nazorat='';
+    if(sezgir.length){
+      nazorat='\n\n🚨 ADMIN NAZORATI ('+sezgir.length+' ta):\n'+
+        sezgir.slice(0,25).map(a=>`• ${a.time||''} — ${a.by||''}\n  ${a.text||''}${a.reason?'\n  💬 '+a.reason:''}`).join('\n');
+      if(sezgir.length>25) nazorat+=`\n… va yana ${sezgir.length-25} ta (Excelda to'liq)`;
+    } else nazorat='\n\n✅ Sezgir amal yo\'q — toza kun';
+
+    const text=
+`🌙 NOCHNOY AUDIT — ${hotelCfg.name}
+
+📅 Yopilgan kun: ${dayStr}
+➡️ Yangi kun: ${fmt(base)}
+👤 Kim yopdi: ${kim}
+🕐 Soat: ${soat}
+
+💰 KUN YAKUNI
+💵 Naqd: ${money(naqd)}
+💳 Karta: ${money(karta)}${vozvrat?`\n↩️ Vozvrat: −${money(vozvrat)}`:''}
+━━━━━━━━━━
+📊 Jami: ${money(naqd+karta-vozvrat)}
+
+🛏 Band xonalar: ${band}/${rooms.length}
+➡️ Kelgan: ${kelgan} · ⬅️ Ketgan: ${ketgan}
+⚠️ Qarzdorlik: ${money(qarz)}${nazorat}`;
+
+    // ── Excel (jadval ko'rinishida) ──
+    const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    const th=a=>`<tr>${a.map(x=>`<th style="background:#2a5bd0;color:#fff;border:1px solid #ccc;padding:6px">${esc(x)}</th>`).join('')}</tr>`;
+    const tr=a=>`<tr>${a.map(x=>`<td style="border:1px solid #ccc;padding:6px">${esc(x)}</td>`).join('')}</tr>`;
+    const yashovchi=stays.filter(s=>s.status==='in');
+    const html='<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'+
+      `<h2 style="font-family:Arial">${esc(hotelCfg.name)} — Nochnoy audit</h2>`+
+      `<div style="font-family:Arial;font-size:12px;color:#666">Yopilgan kun: ${dayStr} · Kim: ${kim} · Soat: ${soat}</div><br>`+
+      '<h3 style="font-family:Arial">Kun yakuni</h3><table cellspacing="0">'+
+        th(['Ko\'rsatkich','Qiymat'])+
+        tr(['Naqd',naqd])+tr(['Karta',karta])+tr(['Vozvrat',vozvrat])+tr(['Jami',naqd+karta-vozvrat])+
+        tr(['Band xonalar',band+'/'+rooms.length])+tr(['Kelgan',kelgan])+tr(['Ketgan',ketgan])+tr(['Qarzdorlik',qarz])+
+      '</table><br>'+
+      `<h3 style="font-family:Arial">Admin nazorati — sezgir amallar (${sezgir.length})</h3><table cellspacing="0">`+
+        th(['Vaqt','Kim','Xona','Mehmon','Amal','Summa','Sabab'])+
+        (sezgir.length?sezgir.map(a=>tr([a.time||'',a.by||'',a.room||'',a.guest||'',a.text||'',a.amount||0,a.reason||''])).join('')
+                      :tr(['—','—','—','—','Sezgir amal yo\'q','',''])) +
+      '</table><br>'+
+      `<h3 style="font-family:Arial">Yashayotgan mehmonlar (${yashovchi.length})</h3><table cellspacing="0">`+
+        th(['Xona','Mehmon','Kelgan','Chiqish','Hisob','Qarz'])+
+        (yashovchi.length?yashovchi.map(s=>tr([s.room,(s.firstName||'')+' '+(s.lastName||''),fmt(s.inDate),fmt(s.outDate),totalDue(s),balance(s)])).join('')
+                         :tr(['—','—','—','—','','']))+
+      '</table><br>'+
+      `<h3 style="font-family:Arial">Kun amallari — hammasi (${acts.length})</h3><table cellspacing="0">`+
+        th(['Vaqt','Kim','Xona','Mehmon','Amal','Summa','Sabab'])+
+        (acts.length?acts.map(a=>tr([a.time||'',a.by||'',a.room||'',a.guest||'',a.text||'',a.amount||0,a.reason||''])).join('')
+                    :tr(['—','—','—','—','Amal yo\'q','','']))+
+      '</table></body></html>';
+
+    // UTF-8 → base64 (kirill/lotin harflar buzilmasin)
+    const bytes=new TextEncoder().encode('\ufeff'+html);
+    let bin=''; bytes.forEach(b=>bin+=String.fromCharCode(b));
+    const b64=btoa(bin);
+
+    const res=await tgCall('audit-report',{
+      hotel:HOTEL_ID, text,
+      file_name:`Nochnoy_audit_${dayY}.xls`, file_b64:b64
+    });
+    if(res && res.ok) toast(`Hisobot Telegramga yuborildi (${res.sent||1} ta) ✓`,true);
+    else if(res && res.error==='no_manager') toast('Hisobot yuborilmadi — menejer Telegramni ulamagan.',false);
+  }catch(e){ /* audit baribir bajarildi — xabar yuborilmasa ham to'xtatmaymiz */ }
 }
 
 /* ================= KUNLIK HISOBOT (kun yakuni) ================= */
