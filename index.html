@@ -723,14 +723,24 @@ function roleOfEmail(email){
 }
 /* ✅ ASOSIY usul — kim qaysi mehmonxonada va qanaqa rolda ekani BAZADAN olinadi.
    Endi rol email nomiga bog'liq emas — hotel_users jadvali hal qiladi. */
-let myHotel=null, myHotelName='', verifiedRole=null;
+let myHotel=null, myHotelName='', verifiedRole=null, isSuper=false, allHotels=[];
 async function fetchMembership(userId){
   try{
+    // 1) SUPER-ADMIN mi? (hamma mehmonxonani ko'radi)
+    const {data:sa}=await SB.from('super_admins').select('user_id').eq('user_id',userId).maybeSingle();
+    if(sa){
+      const {data:hs}=await SB.from('hotels').select('id,name,rooms,active').order('name');
+      allHotels=hs||[];
+      const first=allHotels.find(h=>h.active!==false)||allHotels[0];
+      return {ok:true, found:true, super:true, role:'manager',
+              hotel:first?first.id:'grand_capital', name:first?first.name:'—'};
+    }
+    // 2) Oddiy foydalanuvchi — qaysi mehmonxonada, qanaqa rolda
     const {data,error}=await SB.from('hotel_users')
       .select('hotel_id, role, hotels(name)').eq('user_id',userId).limit(1).maybeSingle();
     if(error) return {ok:false};                       // baza javob bermadi → zaxira usul
     if(!data)  return {ok:true, found:false};          // baza javob berdi, lekin biriktirilmagan
-    return {ok:true, found:true, hotel:data.hotel_id, role:data.role,
+    return {ok:true, found:true, super:false, hotel:data.hotel_id, role:data.role,
             name:(data.hotels&&data.hotels.name)||data.hotel_id};
   }catch(e){ return {ok:false}; }
 }
@@ -755,6 +765,7 @@ async function loginNext(){
     let realRole;
     if(mem.ok && mem.found){
       realRole=mem.role;
+      isSuper=!!mem.super;
       myHotel=mem.hotel; myHotelName=mem.name;
       HOTEL_ID=mem.hotel;                 // dastur endi shu mehmonxona ma'lumotini oladi
     } else if(mem.ok && !mem.found){
@@ -848,7 +859,7 @@ function logout(){ location.reload(); }
 /* ================= I18N ================= */
 let LANG='uz';
 const T={
-  uz:{boshqaruv:'Boshqaruv',hisobot:'Hisobot',baza_s:'Baza',nazorat_s:'Nazorat (faqat menejer)',
+  uz:{boshqaruv:'Boshqaruv',hisobot:'Hisobot',baza_s:'Baza',nazorat_s:'Nazorat (faqat menejer)',super_s:'SUPER-ADMIN',hotellar:'Mehmonxonalar',
     dashboard:'Ish stoli',shaxmatka:'Shaxmatka',mehmonlar:'Mehmonlar bazasi',kompaniyalar:'Kompaniyalar',qarzdorlik:'Qarzdorlik ro\'yxati',channel:'Channel Manager',fnb:'F&B (restoran)',housekeeping:'Housekeeping',sozlamalar:'Sozlamalar',
     tolov:'Kassa va hisobot',statistika:'Statistika',audit:'Nochnoy audit',
     nazorat:'Admin nazorati',shubha:'🚨 Shubhali amallar',emehmon:'E-mehmon taqqoslash',
@@ -864,7 +875,7 @@ const T={
     davr:'Davr',bugun:'Bugun',checkin:'Check-in',checkout:'Check-out',yashamoqda:'Yashamoqda',chiqibketgan:'Chiqib ketgan',
     tolovqosh:"To'lov qo'shish",bekorqil:'Bekor qilish',chopetish:'Chop etish',hammasi:'Hammasi',kartayoq:"Karta to'lovi yo'q",naxtkarta:'naxt + karta − vozvrat',tamehmon:'ta mehmon',bugtushum:'Bugungi tushum',
     wd:['Yak','Du','Se','Cho','Pay','Ju','Sha']},
-  ru:{boshqaruv:'Управление',hisobot:'Отчёты',baza_s:'База',nazorat_s:'Контроль (только менеджер)',
+  ru:{boshqaruv:'Управление',hisobot:'Отчёты',baza_s:'База',nazorat_s:'Контроль (только менеджер)',super_s:'СУПЕР-АДМИН',hotellar:'Отели',
     dashboard:'Рабочий стол',shaxmatka:'Шахматка',mehmonlar:'База гостей',kompaniyalar:'Компании',qarzdorlik:'Список должников',channel:'Channel Manager',fnb:'F&B (ресторан)',housekeeping:'Уборка',sozlamalar:'Настройки',
     tolov:'Касса и отчёт',statistika:'Статистика',audit:'Ночной аудит',
     nazorat:'Контроль админа',shubha:'🚨 Подозрительные действия',emehmon:'Сверка с E-mehmon',
@@ -880,7 +891,7 @@ const T={
     davr:'Период',bugun:'Сегодня',checkin:'Заезд',checkout:'Выезд',yashamoqda:'Проживает',chiqibketgan:'Выехал',
     tolovqosh:'Добавить оплату',bekorqil:'Отменить',chopetish:'Печать',hammasi:'Все',kartayoq:'Нет оплат картой',naxtkarta:'нал + карта − возврат',tamehmon:'гостей',bugtushum:'Доход за сегодня',
     wd:['Вс','Пн','Вт','Ср','Чт','Пт','Сб']},
-  en:{boshqaruv:'Operations',hisobot:'Reports',baza_s:'Database',nazorat_s:'Control (manager only)',
+  en:{boshqaruv:'Operations',hisobot:'Reports',baza_s:'Database',nazorat_s:'Control (manager only)',super_s:'SUPER-ADMIN',hotellar:'Hotels',
     dashboard:'Dashboard',shaxmatka:'Room chart',mehmonlar:'Guest database',kompaniyalar:'Companies',qarzdorlik:'Debtors list',channel:'Channel Manager',fnb:'F&B (restaurant)',housekeeping:'Housekeeping',sozlamalar:'Settings',
     tolov:'Cash & reports',statistika:'Statistics',audit:'Night audit',
     nazorat:'Admin control',shubha:'🚨 Suspicious activity',emehmon:'E-mehmon check',
@@ -1289,6 +1300,11 @@ const NAV_OWNER=[
   {k:'nazorat',i:'shield',badge:true},
   {k:'emehmon',i:'compare'},
 ];
+/* Super-admin — hamma mehmonxonani boshqarish */
+const NAV_SUPER=[
+  {s:'super_s'},
+  {k:'hotellar',i:'briefcase'},
+];
 const ICON={
   home:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/>',
   users:'<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 6a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4-5.6"/>',
@@ -1308,7 +1324,8 @@ const ICON={
   channel:'<circle cx="12" cy="12" r="2"/><path d="M4.9 4.9a10 10 0 0 0 0 14.2M19.1 4.9a10 10 0 0 1 0 14.2M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4"/>',
 };
 function buildNav(){
-  const items=role==='owner'?NAV_OWNER:(role==='manager'?NAV_COMMON.concat(NAV_MANAGER_EXTRA):NAV_COMMON);
+  let items=role==='owner'?NAV_OWNER:(role==='manager'?NAV_COMMON.concat(NAV_MANAGER_EXTRA):NAV_COMMON);
+  if(isSuper) items=NAV_SUPER.concat(items);
   const openCount=auditLog.filter(a=>(a.day||ymd(base))===ymd(base)).length;
   let shubhaCount=0;
   try{ if(role==='manager'||role==='owner') shubhaCount=shubhaList().filter(x=>!ackedShubha[x.key]).length; }catch(e){}
@@ -1348,7 +1365,12 @@ function render(){
       if(_winY) window.scrollTo(0,_winY);
     }catch(e){}
   };
-  if(page==='dashboard') v.innerHTML=renderDashboard();
+  if(isSuper){
+    const p=document.getElementById('hotelPill');
+    if(p) p.innerHTML=`🏢 ${myHotelName||hotelCfg.name} <span style="opacity:.6">· super-admin</span>`;
+  }
+  if(page==='hotellar') v.innerHTML=renderHotels();
+  else if(page==='dashboard') v.innerHTML=renderDashboard();
   else if(page==='shaxmatka') v.innerHTML=renderGantt();
   else if(page==='mehmonlar') v.innerHTML=renderGuests();
   else if(page==='kompaniyalar') v.innerHTML=renderCompanies();
@@ -3884,6 +3906,132 @@ function quickNewBooking(){
 }
 
 /* ================= DASHBOARD ================= */
+/* ═══════════ 🏢 SUPER-ADMIN PANELI — hamma mehmonxonalar ═══════════ */
+let hotelStats={};
+function renderHotels(){
+  if(!isSuper) return `<div class="panel"><div class="panel-b">Bu bo'lim faqat super-admin uchun.</div></div>`;
+  const rows=allHotels.length? allHotels.map(h=>{
+    const st=hotelStats[h.id];
+    const cur=h.id===HOTEL_ID;
+    return `<tr${cur?' style="background:var(--green-bg)"':''}>
+      <td><b>${h.name}</b>${cur?' <span class="tag paid">hozir shu yerdasiz</span>':''}<div class="mini-hint" style="padding:0;font-size:11px">${h.id}</div></td>
+      <td>${h.rooms||0}</td>
+      <td>${st?st.stays:'<span style="color:var(--txt-3)">—</span>'}</td>
+      <td>${st?money(st.revenue):'<span style="color:var(--txt-3)">—</span>'}</td>
+      <td>${h.active===false?'<span class="tag" style="background:var(--red-bg);color:var(--red-ink)">o\'chirilgan</span>':'<span class="tag paid">faol</span>'}</td>
+      <td style="white-space:nowrap">
+        ${cur?'':`<button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" onclick="switchHotel('${h.id}','${(h.name||'').replace(/'/g,"\\'")}')">↪ Kirish</button>`}
+        <button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" onclick="toggleHotel('${h.id}',${h.active===false})">${h.active===false?'✓ Yoqish':'⛔ O\'chirish'}</button>
+      </td></tr>`;
+  }).join('') : `<tr><td colspan="6" style="color:var(--txt-3)">Hali mehmonxona yo'q</td></tr>`;
+  return `
+  <div class="panel" style="margin-bottom:14px">
+    <div class="panel-h"><h3>🏢 Mehmonxonalar (${allHotels.length})</h3><span class="spacer"></span>
+      <button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="loadHotelStats()">↻ Hisobni yangilash</button></div>
+    <div class="panel-b" style="padding:0">
+      <table class="data"><thead><tr>
+        <th>Mehmonxona</th><th>Xona</th><th>Bron</th><th>Tushum</th><th>Holat</th><th>Amal</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-h"><h3>➕ Yangi mehmonxona qo'shish</h3></div>
+    <div class="panel-b" style="padding:18px 20px">
+      <div class="grid3">
+        <div class="field"><label>Nomi</label><input id="nhName" placeholder="Masalan: Hilton Tashkent"></div>
+        <div class="field"><label>Kod (lotin, bo'shliqsiz)</label><input id="nhId" placeholder="hilton_tashkent" style="text-transform:lowercase"></div>
+        <div class="field"><label>Xonalar soni</label><input id="nhRooms" type="text" inputmode="numeric" value="30" oninput="this.value=this.value.replace(/[^0-9]/g,'')"></div>
+      </div>
+      <button class="btn btn-primary" style="width:auto;padding:11px 24px" onclick="addHotel()">➕ Qo'shish</button>
+      <div class="mini-hint" style="padding:10px 0 0">Qo'shilgandan keyin o'sha mehmonxonaga xodim biriktirish kerak — pastdagi bo'limdan.</div>
+    </div>
+  </div>
+  <div class="panel" style="margin-top:14px">
+    <div class="panel-h"><h3>👤 Xodimni mehmonxonaga biriktirish</h3></div>
+    <div class="panel-b" style="padding:18px 20px">
+      <div class="grid3">
+        <div class="field"><label>Xodim email</label><input id="huEmail" placeholder="admin@hilton.uz"></div>
+        <div class="field"><label>Mehmonxona</label><select id="huHotel">${allHotels.map(h=>`<option value="${h.id}">${h.name}</option>`).join('')}</select></div>
+        <div class="field"><label>Roli</label><select id="huRole"><option value="admin">Administrator</option><option value="manager">Menejer</option><option value="owner">Egasi (faqat ko'radi)</option></select></div>
+      </div>
+      <button class="btn btn-primary" style="width:auto;padding:11px 24px" onclick="assignUser()">🔗 Biriktirish</button>
+      <div class="mini-hint" style="padding:10px 0 0">Xodim avval Supabase → Authentication → Users da yaratilgan bo'lishi kerak.</div>
+    </div>
+  </div>`;
+}
+/* Har mehmonxona bo'yicha qisqa hisob */
+async function loadHotelStats(){
+  if(!isSuper||!SB) return;
+  toast('Hisob yig\'ilmoqda...',true);
+  for(const h of allHotels){
+    try{
+      const {data}=await SB.from('stays').select('data').eq('hotel_id',h.id);
+      const list=(data||[]).map(r=>r.data);
+      let rev=0; list.forEach(s=>{ (s.payments||[]).forEach(p=>{ if(p.type==='pay') rev+=+p.amount||0; if(p.type==='refund') rev-=+p.amount||0; }); });
+      hotelStats[h.id]={stays:list.length, revenue:rev};
+    }catch(e){ hotelStats[h.id]={stays:0,revenue:0}; }
+  }
+  render();
+  toast('Hisob yangilandi ✓',true);
+}
+/* Boshqa mehmonxonaga o'tish */
+async function switchHotel(id,name){
+  if(!isSuper) return;
+  if(!confirm(`"${name}" mehmonxonasiga o'tasizmi?\n\nJoriy ma'lumot saqlanadi, keyin yangisi yuklanadi.`)) return;
+  try{ await cloudSave(); }catch(e){}
+  HOTEL_ID=id; myHotel=id; myHotelName=name;
+  stays=[]; auditLog=[]; roomBlocks=[]; lastFingerprint=''; lastSavedAt=0; cloudLoadedOK=false;
+  await cloudLoad();
+  page='dashboard'; render(); buildNav();
+  toast(`${name} — ochildi ✓`,true);
+}
+/* Yangi mehmonxona qo'shish */
+async function addHotel(){
+  if(!isSuper||!SB) return;
+  const name=(document.getElementById('nhName').value||'').trim();
+  let id=(document.getElementById('nhId').value||'').trim().toLowerCase().replace(/[^a-z0-9_]/g,'_');
+  const rooms=+(document.getElementById('nhRooms').value||0);
+  if(!name){ toast('Nomini yozing.',false); return; }
+  if(!id){ toast('Kodini yozing (lotin harflar).',false); return; }
+  if(allHotels.some(h=>h.id===id)){ toast('Bu kod band — boshqasini tanlang.',false); return; }
+  try{
+    const {error}=await SB.from('hotels').insert({id,name,rooms,active:true});
+    if(error) throw error;
+    allHotels.push({id,name,rooms,active:true});
+    allHotels.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    document.getElementById('nhName').value=''; document.getElementById('nhId').value='';
+    render();
+    toast(`${name} qo'shildi ✓`,true);
+  }catch(e){ toast('Xato: '+(e.message||''),false); }
+}
+/* Mehmonxonani yoqish / o'chirish */
+async function toggleHotel(id,turnOn){
+  if(!isSuper||!SB) return;
+  const h=allHotels.find(x=>x.id===id); if(!h) return;
+  if(!turnOn && id===HOTEL_ID){ toast('Hozir shu mehmonxonadasiz — avval boshqasiga o\'ting.',false); return; }
+  if(!confirm(turnOn?`"${h.name}" yoqilsinmi?`:`"${h.name}" o'chirilsinmi?\n\nXodimlari kira olmaydi (ma'lumot o'chmaydi).`)) return;
+  try{
+    const {error}=await SB.from('hotels').update({active:turnOn}).eq('id',id);
+    if(error) throw error;
+    h.active=turnOn; render();
+    toast(turnOn?'Yoqildi ✓':'O\'chirildi',true);
+  }catch(e){ toast('Xato: '+(e.message||''),false); }
+}
+/* Xodimni mehmonxonaga biriktirish */
+async function assignUser(){
+  if(!isSuper||!SB) return;
+  const email=(document.getElementById('huEmail').value||'').trim().toLowerCase();
+  const hotel=document.getElementById('huHotel').value;
+  const r=document.getElementById('huRole').value;
+  if(!email){ toast('Email yozing.',false); return; }
+  try{
+    const {data,error}=await SB.rpc('assign_hotel_user',{p_email:email,p_hotel:hotel,p_role:r});
+    if(error) throw error;
+    if(data==='no_user'){ toast('Bunday email topilmadi. Avval Supabase → Authentication → Users da yarating.',false); return; }
+    document.getElementById('huEmail').value='';
+    toast(`${email} → ${hotel} (${r}) biriktirildi ✓`,true);
+  }catch(e){ toast('Xato: '+(e.message||''),false); }
+}
 function renderDashboard(){
   const m=metrics();
   const wkLabels=['Yak','Dush','Sesh','Chor','Pay','Jum','SHAN'];
