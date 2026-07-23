@@ -635,6 +635,19 @@ const wd=['Yak','Du','Se','Cho','Pay','Ju','Sha'];
 const money=n=>new Intl.NumberFormat('ru-RU').format(Math.round(n))+' so\'m';
 const somNum=n=>new Intl.NumberFormat('ru-RU').format(Math.round(n));
 /* HAQIQIY bugungi kun — TOSHKENT vaqti bo'yicha (kompyuter zonasi boshqa bo'lsa ham to'g'ri) */
+/* 📅 Mehmonxonaning boshlanish sanasi — panelda belgilanadi.
+   Belgilanmagan bo'lsa: bugungi Toshkent kuni. */
+function hotelStartMs(){
+  if(myHotelStart){
+    const p=String(myHotelStart).slice(0,10).split('-');
+    if(p.length===3){
+      const d=new Date(+p[0], +p[1]-1, +p[2]);
+      d.setHours(0,0,0,0);
+      if(!isNaN(d.getTime())) return d.getTime();
+    }
+  }
+  return todayTashkent().getTime();
+}
 function todayTashkent(){
   const p=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()).split('-');
   const d=new Date(+p[0], +p[1]-1, +p[2]); d.setHours(0,0,0,0); return d;
@@ -731,13 +744,13 @@ function roleOfEmail(email){
 }
 /* ✅ ASOSIY usul — kim qaysi mehmonxonada va qanaqa rolda ekani BAZADAN olinadi.
    Endi rol email nomiga bog'liq emas — hotel_users jadvali hal qiladi. */
-let myHotel=null, myHotelName='', myHotelRooms=0, verifiedRole=null, isSuper=false, allHotels=[];
+let myHotel=null, myHotelName='', myHotelRooms=0, myHotelStart=null, verifiedRole=null, isSuper=false, allHotels=[];
 async function fetchMembership(userId){
   try{
     // 1) SUPER-ADMIN mi? (hamma mehmonxonani ko'radi)
     const {data:sa}=await SB.from('super_admins').select('user_id').eq('user_id',userId).maybeSingle();
     if(sa){
-      const {data:hs}=await SB.from('hotels').select('id,name,rooms,active').order('name');
+      const {data:hs}=await SB.from('hotels').select('id,name,rooms,active,start_date').order('name');
       allHotels=hs||[];
       const first=allHotels.find(h=>h.active!==false)||allHotels[0];
       return {ok:true, found:true, super:true, role:'manager',
@@ -745,12 +758,13 @@ async function fetchMembership(userId){
     }
     // 2) Oddiy foydalanuvchi — qaysi mehmonxonada, qanaqa rolda
     const {data,error}=await SB.from('hotel_users')
-      .select('hotel_id, role, hotels(name,rooms)').eq('user_id',userId).limit(1).maybeSingle();
+      .select('hotel_id, role, hotels(name,rooms,start_date)').eq('user_id',userId).limit(1).maybeSingle();
     if(error) return {ok:false};                       // baza javob bermadi → zaxira usul
     if(!data)  return {ok:true, found:false};          // baza javob berdi, lekin biriktirilmagan
     return {ok:true, found:true, super:false, hotel:data.hotel_id, role:data.role,
             name:(data.hotels&&data.hotels.name)||data.hotel_id,
-            roomCount:(data.hotels&&data.hotels.rooms)||0};
+            roomCount:(data.hotels&&data.hotels.rooms)||0,
+            startDate:(data.hotels&&data.hotels.start_date)||null};
   }catch(e){ return {ok:false}; }
 }
 async function loginNext(){
@@ -776,6 +790,8 @@ async function loginNext(){
       realRole=mem.role;
       isSuper=!!mem.super;
       myHotel=mem.hotel; myHotelName=mem.name; myHotelRooms=mem.roomCount||0;
+      myHotelStart=mem.startDate||null;
+      if(isSuper){ const _h=allHotels.find(x=>x.id===mem.hotel); if(_h) myHotelStart=_h.start_date||null; }
       HOTEL_ID=mem.hotel;                 // dastur endi shu mehmonxona ma'lumotini oladi
     } else if(mem.ok && !mem.found){
       await SB.auth.signOut(); pendingUser=null;
@@ -1002,6 +1018,7 @@ async function pickHotel(id,name){
   const h=allHotels.find(x=>x.id===id)||{};
   try{ await cloudSave(); }catch(e){}
   HOTEL_ID=id; myHotel=id; myHotelName=name;
+  myHotelStart=(allHotels.find(x=>x.id===id)||{}).start_date||null;
   stays=[]; auditLog=[]; roomBlocks=[]; shifts=[]; pendingBookings=[]; emArchive={};
   rooms=defaultRooms(h.rooms||30);
   hotelCfg={name:name, currency:'UZS', rooms:(h.rooms||30)};
@@ -4184,6 +4201,7 @@ async function switchHotel(id,name){
   try{ await cloudSave(); }catch(e){}
   const h=allHotels.find(x=>x.id===id)||{};
   HOTEL_ID=id; myHotel=id; myHotelName=name;
+  myHotelStart=(allHotels.find(x=>x.id===id)||{}).start_date||null;
   // ⚠️ Yangi mehmonxona — hammasi TOZALANADI (eskisining xonalari/sozlamasi qolmasin)
   stays=[]; auditLog=[]; roomBlocks=[]; shifts=[]; pendingBookings=[]; emArchive={};
   rooms=defaultRooms(h.rooms||30);
@@ -5245,7 +5263,7 @@ async function cloudLoad(){
     // ⚠️ ISH KUNI (business date) — FAQAT nochnoy audit bilan suriladi.
     // Kompyuter kuni oldinga ketsa ham, dastur sanasi joyida turadi (Shelter/Exely uslubi).
     if(d.base) base.setTime(d.base);
-    else base.setTime(new Date(2026,6,21).getTime());   // birinchi ishga tushirish — 21.07.2026
+    else base.setTime(hotelStartMs());   // birinchi ishga tushirish — panelda belgilangan sana
     ganttStart=new Date(base.getTime()-2*DAY);
     if(d.ackedShubha) ackedShubha=d.ackedShubha;
     if(d.auditHistory) auditHistory=d.auditHistory;
@@ -5378,7 +5396,7 @@ async function seedCleanStart(){
     await SB.from('audit_log').delete().eq('hotel_id',HOTEL_ID);
     stays=[]; auditLog=[]; roomBlocks=[];
     // Sana — 21.07.2026, hech qanday bron QOLMAYDI (mutlaqo bo'sh)
-    base.setTime(new Date(2026,6,21).getTime());
+    base.setTime(hotelStartMs());
     ganttStart=new Date(base.getTime()-2*DAY);
     cleanedEmpty21=true;               // ⚠️ endi hech qachon qayta tozalamaydi
     lastFingerprint=''; seedDone=true;
