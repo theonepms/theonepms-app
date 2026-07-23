@@ -151,7 +151,10 @@ tr:last-child td{border-bottom:none}
 <script>
 const SB_URL='https://bmycnlhryfwjihjxxshp.supabase.co';
 const SB_KEY='sb_publishable_FGaZYRcF0mewLes59vAJeQ_jvWAZxGP';
-const SB=window.supabase.createClient(SB_URL,SB_KEY);
+const SB=window.supabase.createClient(SB_URL,SB_KEY,{
+  auth:{ persistSession:false, autoRefreshToken:true, detectSessionInUrl:false }
+});
+const IDLE_MIN=15;   // shuncha daqiqa tegilmasa — o'zi chiqib ketadi
 const FN=SB_URL+'/functions/v1/admin';
 
 let hotels=[], sel=null, staff=[], busy=false, lastTag=null;
@@ -190,6 +193,7 @@ async function signIn(){
     if(!me.super){ await SB.auth.signOut(); throw new Error('Bu akkaunt super-admin emas.'); }
     $('whoami').textContent=email;
     $('gate').classList.add('hidden'); $('app').classList.remove('hidden');
+    idleReset();
     await loadHotels();
   }catch(e){ showErr(e.message||'Kirishda xato.'); }
   btn.disabled=false; btn.textContent='Kirish';
@@ -407,19 +411,25 @@ async function createHotel(){
 }
 document.addEventListener('input',e=>{ if(e.target&&e.target.id==='hId') e.target.dataset.touched='1'; });
 
-/* sessiya bo'lsa — darrov ichkariga */
-(async()=>{
-  try{
-    const { data:{ session } }=await SB.auth.getSession();
-    if(!session) return;
-    const me=await call('me');
-    if(me.super){
-      $('whoami').textContent=session.user.email;
-      $('gate').classList.add('hidden'); $('app').classList.remove('hidden');
-      await loadHotels();
-    }
-  }catch(e){}
-})();
+/* 🔒 Avtomatik kirish O'CHIRILDI — har safar email va parol so'raladi.
+   Sahifa yopilsa yoki yangilansa sessiya qolmaydi. */
+
+/* ⏱ Bekor turish nazorati — 15 daqiqa tegilmasa o'zi chiqadi */
+let idleT=null;
+function idleReset(){
+  clearTimeout(idleT);
+  if($('app').classList.contains('hidden')) return;
+  idleT=setTimeout(async()=>{
+    await SB.auth.signOut();
+    alert(IDLE_MIN+" daqiqa harakat bo'lmadi — xavfsizlik uchun chiqarildingiz.");
+    location.reload();
+  }, IDLE_MIN*60*1000);
+}
+['click','keydown','mousemove','scroll','touchstart'].forEach(ev=>
+  document.addEventListener(ev, idleReset, {passive:true}));
+
+/* Sahifa yopilganda sessiyani tozalaymiz */
+window.addEventListener('beforeunload',()=>{ try{ SB.auth.signOut(); }catch(e){} });
 </script>
 </body>
 </html>
