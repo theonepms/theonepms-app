@@ -714,11 +714,25 @@ function loginErr(msg){
   e.textContent=msg; e.classList.remove('hidden');
 }
 /* Akkaunt emailiga qarab ROL beriladi — admin menejer bo'la OLMAYDI */
+/* ⚠️ ZAXIRA usul — faqat baza javob bermasa ishlatiladi */
 function roleOfEmail(email){
   const e=(email||'').toLowerCase();
   if(e.startsWith('manager@')||e.startsWith('menejer@')) return 'manager';
   if(e.startsWith('owner@')||e.startsWith('egasi@')) return 'owner';
   return 'admin';   // qolgan hamma — faqat administrator
+}
+/* ✅ ASOSIY usul — kim qaysi mehmonxonada va qanaqa rolda ekani BAZADAN olinadi.
+   Endi rol email nomiga bog'liq emas — hotel_users jadvali hal qiladi. */
+let myHotel=null, myHotelName='', verifiedRole=null;
+async function fetchMembership(userId){
+  try{
+    const {data,error}=await SB.from('hotel_users')
+      .select('hotel_id, role, hotels(name)').eq('user_id',userId).limit(1).maybeSingle();
+    if(error) return {ok:false};                       // baza javob bermadi → zaxira usul
+    if(!data)  return {ok:true, found:false};          // baza javob berdi, lekin biriktirilmagan
+    return {ok:true, found:true, hotel:data.hotel_id, role:data.role,
+            name:(data.hotels&&data.hotels.name)||data.hotel_id};
+  }catch(e){ return {ok:false}; }
 }
 async function loginNext(){
   const email=(document.getElementById('lg').value||'').trim();
@@ -736,8 +750,22 @@ async function loginNext(){
       return;
     }
     pendingUser=data.user;
-    // ⚠️ ROL — akkaunt emailidan olinadi, tanlangan tugmadan EMAS
-    const realRole=roleOfEmail(data.user.email);
+    // ✅ ROL VA MEHMONXONA — BAZADAN olinadi (hotel_users). Email nomiga bog'liq emas.
+    const mem=await fetchMembership(data.user.id);
+    let realRole;
+    if(mem.ok && mem.found){
+      realRole=mem.role;
+      myHotel=mem.hotel; myHotelName=mem.name;
+      HOTEL_ID=mem.hotel;                 // dastur endi shu mehmonxona ma'lumotini oladi
+    } else if(mem.ok && !mem.found){
+      await SB.auth.signOut(); pendingUser=null;
+      btn.disabled=false; btn.textContent='Kirish';
+      loginErr("Bu akkaunt hech qaysi mehmonxonaga biriktirilmagan. Administratorga murojaat qiling.");
+      return;
+    } else {
+      realRole=roleOfEmail(data.user.email);   // baza javob bermadi — zaxira usul
+    }
+    verifiedRole=realRole;
     btn.disabled=false; btn.textContent='Kirish';
     // Admin "Menejer" tugmasini bosgan bo'lsa — RAD ETILADI
     if(selRole!==realRole){
@@ -787,8 +815,8 @@ function startMFA(){
 }
 async function mfaVerify(){
   const v=document.getElementById('mfaIn').value.trim();
-  // ⚠️ Qayta tekshirish: faqat HAQIQIY menejer akkaunti o'ta oladi
-  if(!pendingUser || roleOfEmail(pendingUser.email)!=='manager'){
+  // ⚠️ Qayta tekshirish: faqat HAQIQIY menejer o'ta oladi (rol bazadan)
+  if(!pendingUser || (verifiedRole||roleOfEmail(pendingUser.email))!=='manager'){
     toast("Bu akkaunt menejer emas. Kirish rad etildi.",false);
     try{ if(SB) await SB.auth.signOut(); }catch(e){}
     pendingUser=null; clearInterval(mfaTimer); backToStep1();
@@ -798,8 +826,9 @@ async function mfaVerify(){
   else toast('Kod noto\'g\'ri yoki eskirgan. Ekrandagi kodni kiriting.',false);
 }
 function enterApp(r){
-  // ⚠️ Xavfsizlik: rol har doim akkaunt emailidan olinadi
-  if(pendingUser) r=roleOfEmail(pendingUser.email);
+  // ⚠️ Xavfsizlik: rol har doim tasdiqlangan manbadan (baza) olinadi
+  if(verifiedRole) r=verifiedRole;
+  else if(pendingUser) r=roleOfEmail(pendingUser.email);
   role=r;
   document.getElementById('landing').classList.add('hidden');
   document.getElementById('login').classList.add('hidden'); document.getElementById('app').classList.remove('hidden');
@@ -1003,6 +1032,32 @@ function openShiftModal(){
   shiftState={day:ymd(base),cashExpect:e.cash,cardExpect:e.card,cashReal:'',cardReal:'',note:''};
   drawShiftModal();
 }
+/* Smena — yozayotganda faqat FARQ raqami va xulosa yangilanadi (oyna qayta chizilmaydi) */
+function shiftLive(){
+  const x=shiftState; if(!x) return;
+  const cashR=x.cashReal===''?null:+x.cashReal, cardR=x.cardReal===''?null:+x.cardReal;
+  const dCash=cashR===null?null:cashR-x.cashExpect;
+  const dCard=cardR===null?null:cardR-x.cardExpect;
+  const put=(el,d)=>{ if(!el)return;
+    el.textContent=(d===null)?'—':(d===0?'✓ teng':(d>0?'+':'')+money(d));
+    el.style.color=(d===null)?'var(--txt-3)':(d===0?'var(--green-ink)':'var(--red-ink)'); };
+  put(document.getElementById('dif_cashReal'),dCash);
+  put(document.getElementById('dif_cardReal'),dCard);
+  const box=document.getElementById('shiftXulosa'); if(!box) return;
+  if(dCash===null||dCard===null){ box.innerHTML=''; return; }
+  if(dCash===0&&dCard===0){
+    box.innerHTML=`<div style="background:var(--green-bg);color:var(--green-ink);padding:11px 13px;border-radius:9px;font-weight:600">✓ Hammasi to'g'ri — farq yo'q</div>`;
+    return;
+  }
+  let sabab='';
+  if(dCash<0&&dCard>0&&Math.abs(dCash+dCard)<1000)
+    sabab=`<div style="margin-top:7px;font-weight:700">⚠️ KARTA to'lovi "NAXT" deb yozilgan!</div><div style="font-size:12px">Naqd ${money(-dCash)} kam, karta ${money(dCard)} ortiq — bir xil summa.</div>`;
+  else if(dCash>0&&dCard<0&&Math.abs(dCash+dCard)<1000)
+    sabab=`<div style="margin-top:7px;font-weight:700">⚠️ NAQD to'lovi "KARTA" deb yozilgan!</div>`;
+  else if(dCash<0) sabab=`<div style="margin-top:7px;font-weight:700">⚠️ Kassada ${money(-dCash)} YETMAYAPTI</div>`;
+  else if(dCash>0) sabab=`<div style="margin-top:7px;font-weight:700">⚠️ Kassada ${money(dCash)} ORTIQCHA — yozilmagan to'lov bormi?</div>`;
+  box.innerHTML=`<div style="background:var(--red-bg);color:var(--red-ink);padding:11px 13px;border-radius:9px">🚨 FARQ TOPILDI${sabab}</div>`;
+}
 function drawShiftModal(){
   const x=shiftState; if(!x) return;
   const old=document.getElementById('shiftOverlay'); if(old) old.remove();
@@ -1027,10 +1082,10 @@ function drawShiftModal(){
     <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
       <div style="flex:1;min-width:130px;font-size:13px;font-weight:600">${nom}</div>
       <div style="min-width:120px;text-align:right;font-size:13px;color:var(--txt-2)">${money(exp)}</div>
-      <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any"
-        value="${val}" oninput="shiftState.${fld}=this.value;drawShiftModal()" placeholder="sanang..."
+      <input type="text" inputmode="numeric" autocomplete="off"
+        value="${val}" oninput="this.value=this.value.replace(/[^0-9]/g,'');shiftState.${fld}=this.value;shiftLive()" placeholder="sanang..."
         style="width:140px;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;text-align:right">
-      <div style="min-width:120px;text-align:right;font-weight:700;color:${dif===null?'var(--txt-3)':(dif===0?'var(--green-ink)':'var(--red-ink)')}">
+      <div id="dif_${fld}" style="min-width:120px;text-align:right;font-weight:700;color:${dif===null?'var(--txt-3)':(dif===0?'var(--green-ink)':'var(--red-ink)')}">
         ${dif===null?'—':(dif===0?'✓ teng':(dif>0?'+':'')+money(dif))}</div>
     </div>`;
   const html=`<div class="overlay" id="shiftOverlay">
@@ -1046,7 +1101,7 @@ function drawShiftModal(){
         ${row('💳 Karta (terminal)',x.cardExpect,x.cardReal,'cardReal',dCard)}
         <div class="field" style="margin-top:12px"><label>Izoh (ixtiyoriy)</label>
           <textarea rows="2" oninput="shiftState.note=this.value" placeholder="Masalan: mehmon 50 000 ni ertaga to'laydi...">${x.note}</textarea></div>
-        ${xulosa}
+        <div id="shiftXulosa">${xulosa}</div>
       </div>
       <div class="modal-f"><button class="btn btn-ghost" onclick="closeShiftModal()">Bekor</button>
         <button class="btn btn-primary" onclick="commitShift()">💾 Smenani yopish</button></div>
@@ -2026,45 +2081,44 @@ function openFolio(id,keepEdit){
 
   // TAHRIRLASH — registratsiyadagidek (ism, pasport, sherigi qo'shish...)
   const editable = role!=='owner' && s.status!=='canceled' && (s.status!=='out' || role==='manager');
-  const gForm=folioEdit.guests.map((g,i)=>`
+  const gForm=`<div class="guestgrid" style="display:grid;gap:12px;grid-template-columns:repeat(${Math.min(Math.max(folioEdit.guests.length,1),3)},minmax(0,1fr))">${folioEdit.guests.map((g,i)=>`
     <div class="guestblock">
-      <div class="gh">${i===0?P('Asosiy mehmon'):(LANG==='ru'?'Спутник '+i:LANG==='en'?'Companion '+i:'Sherigi '+i)}${i>0?`<span class="rm" onclick="fRmGuest('${id}',${i})">✕ olib tashlash</span>`:''}</div>
-      <div class="grid2">
-        <div class="field"><label>${P("Ism")}</label><input value="${g.firstName}" oninput="folioEdit.guests[${i}].firstName=this.value"></div>
-        <div class="field"><label>${P("Familiya")}</label><input value="${g.lastName}" oninput="folioEdit.guests[${i}].lastName=this.value"></div>
-      </div>
-      <div class="grid3">
-        <div class="field"><label>${P("Jinsi")}</label><select onchange="folioEdit.guests[${i}].gender=this.value"><option${g.gender==='Erkak'?' selected':''}>Erkak</option><option${g.gender==='Ayol'?' selected':''}>Ayol</option></select></div>
-        <div class="field"><label>${P("Tug'ilgan sanasi")}</label><input type="text" inputmode="numeric" value="${g.birth}" oninput="fBirth(${i},this)" placeholder="09.09.2004" maxlength="10"></div>
-        <div class="field"><label>${P("Fuqaroligi")}</label><input list="folioCountry" value="${g.citizen}" oninput="folioEdit.guests[${i}].citizen=this.value"></div>
-      </div>
-      <div class="field"><label>${P("Pasport seriyasi va raqami")}</label><input value="${g.passport}" oninput="folioEdit.guests[${i}].passport=this.value" style="text-transform:uppercase" placeholder="AB 1234567"></div>
-      ${i>0?`<div class="field"><label>Kelgan vaqti${(s.status==='in'&&!g.isNew)?' 🔒 (qulflangan)':''}</label>
+      <div class="gh">${i===0?P('Asosiy mehmon'):(LANG==='ru'?'Спутник '+i:LANG==='en'?'Companion '+i:'Sherigi '+i)}${i>0?`<span class="rm" onclick="fRmGuest('${id}',${i})">✕</span>`:''}</div>
+      <div class="field"><label>${P("Fuqaroligi")}</label><input list="folioCountry" value="${g.citizen}" oninput="folioEdit.guests[${i}].citizen=this.value" onchange="folioAutoSave('${id}')"></div>
+      <div class="field"><label>${P("Familiya")}</label><input value="${g.lastName}" oninput="folioEdit.guests[${i}].lastName=this.value" onchange="folioAutoSave('${id}')"></div>
+      <div class="field"><label>${P("Ism")}</label><input value="${g.firstName}" oninput="folioEdit.guests[${i}].firstName=this.value" onchange="folioAutoSave('${id}')"></div>
+      <div class="field"><label>${P("Jinsi")}</label><select onchange="folioEdit.guests[${i}].gender=this.value;folioAutoSave('${id}')"><option${g.gender==='Erkak'?' selected':''}>Erkak</option><option${g.gender==='Ayol'?' selected':''}>Ayol</option></select></div>
+      <div class="field"><label>${P("Tug'ilgan sanasi")}</label><input type="text" inputmode="numeric" value="${g.birth}" oninput="fBirth(${i},this)" onchange="folioAutoSave('${id}')" placeholder="09.09.2004" maxlength="10"></div>
+      <div class="field"><label>${P("Pasport seriyasi va raqami")}</label><input value="${g.passport}" oninput="folioEdit.guests[${i}].passport=this.value" onchange="folioAutoSave('${id}')" style="text-transform:uppercase" placeholder="AB 1234567"></div>
+      ${i>0?`<div class="field"><label>Kelgan vaqti${(s.status==='in'&&!g.isNew)?' 🔒':''}</label>
         ${(s.status==='in'&&!g.isNew)
           ? `<input value="${g.arrTime||s.arrTime}" disabled style="background:var(--panel-2);color:var(--txt-2);cursor:not-allowed">`
-          : `<input type="time" value="${g.arrTime||''}" onchange="folioEdit.guests[${i}].arrTime=this.value">`}</div>`:''}
-    </div>`).join('');
+          : `<input type="time" value="${g.arrTime||''}" onchange="folioEdit.guests[${i}].arrTime=this.value;folioAutoSave('${id}')">`}</div>`:''}
+    </div>`).join('')}</div>`;
   const editForm=editable?`
     <div style="font-weight:600;font-size:13px;margin:18px 0 8px">Mehmon ma'lumotlari — tahrirlash</div>
     <datalist id="folioCountry">${countries.map(c=>`<option value="${c}">`).join('')}</datalist>
     ${gForm}
     <button class="addguest" onclick="fAddGuest('${id}')">+ Yana mehmon (sherigi) qo'shish</button>
     <div class="grid2" style="margin-top:12px">
-      <div class="field"><label>${P("Telefon")}</label><input value="${folioEdit.phone}" oninput="folioEdit.phone=this.value"></div>
-      <div class="field"><label>${P("Email")}</label><input value="${folioEdit.email}" oninput="folioEdit.email=this.value"></div>
+      <div class="field"><label>${P("Telefon")}</label><input value="${folioEdit.phone}" oninput="folioEdit.phone=this.value" onchange="folioAutoSave('${id}')"></div>
+      <div class="field"><label>${P("Email")}</label><input value="${folioEdit.email}" oninput="folioEdit.email=this.value" onchange="folioAutoSave('${id}')"></div>
     </div>
     <div class="field"><label>${P("Kompaniya / kanal")}</label>
-      <input list="folioCompany" value="${folioEdit.company}" oninput="folioEdit.company=this.value" placeholder="Walk-in, Booking...">
+      <input list="folioCompany" value="${folioEdit.company}" oninput="folioEdit.company=this.value" onchange="folioAutoSave('${id}')" placeholder="Walk-in, Booking...">
       <datalist id="folioCompany">${companies.map(c=>`<option value="${c}">`).join('')}</datalist></div>
     <div class="grid2">
       ${s.status==='in'
         ? `<div class="field"><label>Kelish sanasi va vaqti 🔒</label><input value="${fmt(s.inDate)} · ${s.arrTime}" disabled style="background:var(--panel-2);color:var(--txt-2);cursor:not-allowed"></div>`
         : `<div class="field"><label>Bron sanasi (kirish kuni) — o'zgartiring, darrov ko'chadi</label><input type="date" value="${ymd(s.inDate)}" onchange="moveBookingDate('${id}',this.value)"></div>`}
-      <div class="field"><label>Premichaniye (izoh)</label><input value="${folioEdit.premicha}" oninput="folioEdit.premicha=this.value"></div>
+      <div class="field"><label>Premichaniye (izoh)</label><input value="${folioEdit.premicha}" oninput="folioEdit.premicha=this.value" onchange="folioAutoSave('${id}')"></div>
     </div>
     ${s.status==='book'?`<div class="mini-hint" style="padding:0 0 8px">Bron sanasini o'zgartirsangiz, xona shu yangi kunga ${nights(s)} tunga ko'chadi. Chiqish avtomatik hisoblanadi.</div>`:''}
     ${s.status==='in'?`<div class="mini-hint" style="padding:0 0 8px;color:var(--amber-ink)">🔒 Check-in sanasi va vaqti o'zgartirib bo'lmaydi — E-mehmon bilan sverka to'g'ri bo'lishi uchun qulflangan.</div>`:''}
-    <button class="btn btn-primary" style="width:auto;padding:11px 24px;margin-top:8px" onclick="saveFolio('${id}')">💾 Ma'lumotlarni saqlash</button>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
+      <button class="btn btn-primary" style="width:auto;padding:11px 24px" onclick="saveFolio('${id}')">💾 Ma'lumotlarni saqlash</button>
+      <span id="folioSaveTag" style="font-size:12px;font-weight:600;color:var(--green-ink);opacity:.45;transition:.3s">⚡ avtomatik saqlanadi</span>
+    </div>
     ${s.status==='in'?`<div class="mini-hint" style="padding:8px 0 0">Check-in'dan keyingi o'zgarishlar menejer jurnaliga yoziladi.</div>`:''}`
     : `${(s.extra&&s.extra.length)?`<div class="folio-meta"><div class="m"><div class="k">Qo'shimcha mehmonlar</div><div class="val">${s.extra.map(e=>e.firstName+' '+e.lastName).join(', ')}</div></div></div>`:''}${s.premicha?`<div class="hint">📝 ${s.premicha}</div>`:''}`;
 
@@ -2084,7 +2138,11 @@ function openFolio(id,keepEdit){
         <div class="m"><div class="k">Kelgan</div><div class="val">${fmt(s.inDate)} · ${s.arrTime}</div></div>
         <div class="m"><div class="k">Chiqish</div><div class="val">${s.status==='out'?`${fmt(s.checkoutDate||s.outDate)} · ${s.checkoutTime||''}`:fmt(s.outDate)}</div></div>
         <div class="m"><div class="k">1 kunlik narx</div><div class="val money">${money(s.nightly||Math.round(s.price/nights(s)))}</div></div>
-        <div class="m"><div class="k">Kanal</div><div class="val">${s.company}</div></div>
+        <div class="m"><div class="k">Kanal</div>${(role!=='owner'&&s.status!=='canceled')
+          ? `<input class="val" list="folioChanList" value="${s.company||''}" onchange="setChannel('${id}',this.value)" placeholder="Walk-in..."
+               style="width:100%;border:1px solid var(--line);border-radius:7px;padding:4px 8px;background:#fff;font-family:inherit">
+             <datalist id="folioChanList">${['Walk-in (ko\'chadan)','Booking.com','Telefon orqali','Agentlik','Korporativ','Ostrovok','Airbnb','Expedia'].concat(companies).filter((v,i,a)=>a.indexOf(v)===i).map(c=>`<option value="${c}">`).join('')}</datalist>`
+          : `<div class="val">${s.company}</div>`}</div>
       </div>
 
       ${(s.status==='canceled')?`<div style="margin:18px 0 8px">
@@ -2127,6 +2185,33 @@ function openFolio(id,keepEdit){
 function closeFolio(){const o=document.getElementById('folioOverlay');if(o)o.remove();folioEdit=null;}
 function fAddGuest(id){ folioEdit.guests.push({firstName:'',lastName:'',gender:'Erkak',birth:'',citizen:'O\'zbekiston',passport:'',arrTime:uzTime(),isNew:true}); openFolio(id,true); }
 function fRmGuest(id,i){ folioEdit.guests.splice(i,1); openFolio(id,true); }
+/* ⚡ AVTOMATIK SAQLASH — maydondan chiqqan zahoti yozilgan ma'lumot saqlanadi.
+   Ekran qayta chizilmaydi (yozayotganda kursor sakramaydi). */
+/* Kanalni (bron manbaini) o'zgartirish — folio ustidagi maydondan */
+function setChannel(id,val){
+  const s=stays.find(x=>x.id===id); if(!s) return;
+  const v=(val||'').trim(); if(!v||v===s.company) return;
+  const old=s.company||'—';
+  s.company=v;
+  if(!companies.includes(v)) companies.push(v);
+  if(s.status==='in'||s.status==='out') logAction(s,'edit',`Kanal: ${old} → ${v}`,0);
+  lastFingerprint=''; saveState(); render();
+  toast('Kanal o\'zgartirildi ✓',true);
+}
+function folioAutoSave(id){
+  const s=stays.find(x=>x.id===id); if(!s||!folioEdit) return;
+  const g=folioEdit.guests[0]; if(!g) return;
+  s.firstName=g.firstName; s.lastName=g.lastName; s.gender=g.gender;
+  s.birth=g.birth; s.citizen=g.citizen; s.passport=g.passport;
+  s.extra=folioEdit.guests.slice(1).map(x=>({firstName:x.firstName,lastName:x.lastName,gender:x.gender,
+    birth:x.birth,citizen:x.citizen,passport:x.passport,arrTime:x.arrTime||s.arrTime}));
+  s.phone=folioEdit.phone; s.email=folioEdit.email; s.premicha=folioEdit.premicha;
+  if(folioEdit.company) s.company=folioEdit.company;
+  lastFingerprint=''; saveState();
+  const b=document.getElementById('folioSaveTag');
+  if(b){ b.textContent='✓ saqlandi'; b.style.opacity='1';
+    clearTimeout(window._fsT); window._fsT=setTimeout(()=>{ b.style.opacity='.45'; },1800); }
+}
 function saveFolio(id){
   const s=stays.find(x=>x.id===id); if(!s||!folioEdit)return;
   const g=folioEdit.guests[0];
@@ -4471,7 +4556,7 @@ function toast(msg,ok){
 /* ================= ☁️ SERVER (SUPABASE) — MA'LUMOT BULUTDA ================= */
 const SB_URL='https://bmycnlhryfwjihjxxshp.supabase.co';
 const SB_KEY='sb_publishable_FGaZYRcF0mewLes59vAJeQ_jvWAZxGP';
-const HOTEL_ID='grand_capital';
+let HOTEL_ID='grand_capital';   // login paytida hotel_users jadvalidan aniqlanadi
 let SB=null, cloudReady=false, saveTimer=null, syncTimer=null, lastSavedAt=0, cloudBusy=false, savePending=false, seedDone=false, serverSeedTag=null, cleanedEmpty21=false;
 let cloudLoadedOK=false;   // ⚠️ birinchi muvaffaqiyatli yuklashsiz SAQLAMAYMIZ (ma'lumot yo'qolmasin)
 
@@ -4686,6 +4771,5 @@ function resetState(){
 /* Sahifa yopilganda — saqlab qolamiz */
 window.addEventListener('beforeunload',()=>{ if(SB&&savePending){ clearTimeout(saveTimer); savePending=false; cloudSave(); } });
 </script>
-<div id="buildBadge" style="position:fixed;bottom:7px;right:9px;z-index:99999;font-size:12px;font-weight:700;color:#fff;background:#188a4a;padding:4px 10px;border-radius:7px;font-family:system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.25);pointer-events:none;letter-spacing:.3px">✅ YANGI v22.07-B</div>
 </body>
 </html>
