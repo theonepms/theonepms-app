@@ -157,7 +157,7 @@ const SB=window.supabase.createClient(SB_URL,SB_KEY,{
 const IDLE_MIN=15;   // shuncha daqiqa tegilmasa — o'zi chiqib ketadi
 const FN=SB_URL+'/functions/v1/admin';
 
-let hotels=[], sel=null, staff=[], busy=false, lastTag=null;
+let hotels=[], sel=null, staff=[], pays=[], rooms=[], roomsDirty=false, busy=false, lastTag=null;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const roleName=r=>r==='manager'?'Menejer':r==='owner'?'Egasi':'Administrator';
@@ -224,10 +224,19 @@ function drawRack(){
 }
 async function openHotel(id){
   const h=hotels.find(x=>x.id===id); if(!h) return;
-  sel=h; lastTag=null; drawRack();
+  if(roomsDirty && sel && sel.id!==id &&
+     !confirm("Xonalarda saqlanmagan o'zgarish bor. Baribir boshqasiga o'tasizmi?")) return;
+  sel=h; lastTag=null; tgSlot=null; drawRack();
   $('main').innerHTML=`<div class="empty"><span class="spin"></span> Yuklanmoqda…</div>`;
   try{ const r=await call('staff',{hotel:id}); staff=r.staff||[]; }
   catch(e){ staff=[]; toast(e.message,'bad'); }
+  try{ const r2=await call('payments',{hotel:id}); pays=r2.payments||[]; }
+  catch(e){ pays=[]; }
+  try{
+    const r3=await call('rooms-get',{hotel:id});
+    rooms = r3.rooms || defaultRooms(h.rooms||30);
+  }catch(e){ rooms=defaultRooms(h.rooms||30); }
+  roomsDirty=false;
   drawHotel();
 }
 function drawHotel(){
@@ -238,12 +247,18 @@ function drawHotel(){
       <td><select class="mini-sel" onchange="setRole('${esc(u.id)}',this.value)">
         ${['admin','manager','owner'].map(r=>`<option value="${r}"${u.role===r?' selected':''}>${roleName(r)}</option>`).join('')}
       </select></td>
+      <td style="white-space:nowrap">${u.tg_linked
+        ? `<span class="tag ok">📱 ${u.tg_username?'@'+esc(u.tg_username):'ulangan'}</span>`
+        : `<span class="tag off">ulanmagan</span>`}</td>
       <td style="color:var(--muted);font-size:12.5px;white-space:nowrap">${u.last_sign_in?esc(u.last_sign_in):'hali kirmagan'}</td>
       <td style="text-align:right;white-space:nowrap">
+        ${u.tg_linked
+          ? `<button class="btn ghost sm" onclick="tgUnlink('${esc(u.id)}','${esc(u.email)}')">TG uzish</button>`
+          : `<button class="btn ghost sm" onclick="tgCode('${esc(u.id)}','${esc(u.email)}')">TG kod</button>`}
         <button class="btn ghost sm" onclick="askPassword('${esc(u.id)}','${esc(u.email)}')">Parol</button>
         <button class="btn danger sm" onclick="removeStaff('${esc(u.id)}','${esc(u.email)}')">Chiqarish</button>
       </td>
-    </tr>`).join('') : `<tr><td colspan="4" class="empty">Xodim yo'q. Pastdan qo'shing.</td></tr>`;
+    </tr>`).join('') : `<tr><td colspan="5" class="empty">Xodim yo'q. Pastdan qo'shing.</td></tr>`;
 
   $('main').innerHTML=`
     <div class="page-h">
@@ -259,7 +274,7 @@ function drawHotel(){
     <div class="card">
       <div class="card-h"><h2>Xodimlar (${staff.length})</h2></div>
       <div class="tbl-wrap"><table>
-        <thead><tr><th>Email</th><th>Roli</th><th>Oxirgi kirish</th><th></th></tr></thead>
+        <thead><tr><th>Email</th><th>Roli</th><th>Telegram</th><th>Oxirgi kirish</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
     </div>
@@ -283,8 +298,283 @@ function drawHotel(){
         <div class="hint">Akkaunt shu yerda yaratiladi va <b>${esc(h.name)}</b> ga biriktiriladi. Supabase panelini ochish shart emas.</div>
         <div id="tagSlot"></div>
       </div>
-    </div>`;
+    </div>
+
+    ${tgCardHtml()}
+
+    ${roomCard()}
+
+    ${payCard()}`;
   if(lastTag) drawTag();
+}
+
+/* ── 📱 telegram ── */
+let tgSlot=null;
+async function tgCode(id,email){
+  try{
+    const r=await call('tg-code',{user_id:id, hotel:sel.id});
+    tgSlot={ email, code:r.code, mins:r.expires_min||10 };
+    drawHotel();
+    toast('Kod tayyor — xodimga bering','good');
+  }catch(e){ toast(e.message,'bad'); }
+}
+async function tgUnlink(id,email){
+  if(!confirm(`${email} ning Telegram ulanishi uzilsinmi?\n\nUnga endi kirish kodlari va hisobotlar bormaydi.`)) return;
+  try{ await call('tg-unlink',{user_id:id}); toast('Uzildi','good'); await openHotel(sel.id); }
+  catch(e){ toast(e.message,'bad'); }
+}
+function tgCardHtml(){
+  if(!tgSlot) return '';
+  const link='https://t.me/theonepms_bot?start='+tgSlot.code;
+  return `
+    <div class="card" style="border-color:var(--brass-dim)">
+      <div class="card-h"><h2>📱 Telegram ulash kodi</h2><span class="spacer"></span>
+        <button class="btn ghost sm" onclick="tgSlot=null;drawHotel()">Yopish</button></div>
+      <div class="card-b">
+        <div style="font-size:13px;color:var(--muted);margin-bottom:14px">
+          <b style="color:var(--paper)">${esc(tgSlot.email)}</b> uchun
+        </div>
+        <div style="background:var(--ink);border:1px solid var(--brass-dim);border-radius:12px;padding:20px;text-align:center;margin-bottom:16px">
+          <div class="mono" style="font-size:32px;font-weight:700;letter-spacing:7px;color:var(--brass)">${tgSlot.code}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:8px">${tgSlot.mins} daqiqa amal qiladi</div>
+        </div>
+        <div class="hint" style="margin:0 0 14px">
+          ⚠️ Bu kodni <b>siz emas, o'sha xodimning o'zi</b> yuborishi kerak — ulanish uning Telegramiga bog'lanadi.
+          Kodni yoki quyidagi havolani unga bering: u bosadi, bot ochiladi, kod avtomatik ketadi.
+        </div>
+        <div class="mono" style="background:var(--ink);border:1px solid var(--line-2);border-radius:8px;padding:10px 12px;font-size:12px;word-break:break-all;margin-bottom:12px">${link}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn sm" onclick="tgCopy()">Havolani nusxa olish</button>
+          <button class="btn ghost sm" onclick="openHotel(sel.id)">↻ Ulandimi — tekshirish</button>
+        </div>
+      </div>
+    </div>`;
+}
+function tgCopy(){
+  if(!tgSlot) return;
+  const txt=`THEONEPMS — Telegram ulash\n\nKod: ${tgSlot.code}\nHavola: https://t.me/theonepms_bot?start=${tgSlot.code}\n\nHavolani bosing yoki kodni @theonepms_bot ga yuboring. ${tgSlot.mins} daqiqa amal qiladi.`;
+  navigator.clipboard.writeText(txt).then(()=>toast('Nusxa olindi','good'),()=>toast('Nusxa olinmadi','bad'));
+}
+
+/* ── 🏠 xonalar ── */
+const RT=[['std','Standart'],['twin','Twin / Double'],['dlx','Deluxe'],['lux','Luxe']];
+const rtName=k=>(RT.find(x=>x[0]===k)||RT[0])[1];
+
+function defaultRooms(count){
+  const out=[]; let f=2, n=1;
+  while(out.length<count){
+    out.push({ n:String(f)+String(n).padStart(2,'0'),
+               t:(n===1?'lux':(n%6===0?'twin':(n%7===0?'dlx':'std'))), f:String(f) });
+    n++; if(n>13){ f++; n=1; }
+  }
+  return out;
+}
+
+function roomCard(){
+  const byType={}; for(const r of rooms) byType[r.t]=(byType[r.t]||0)+1;
+  const chips=RT.filter(([k])=>byType[k]).map(([k,lb])=>
+    `<span class="tag ok" style="background:var(--panel-2);color:var(--muted)">${lb}: ${byType[k]}</span>`).join(' ');
+
+  const rows = rooms.length ? rooms.map((r,i)=>`
+    <tr>
+      <td><input class="mono" value="${esc(r.n)}" onchange="setRoomN(${i},this.value)"
+           style="width:96px;background:var(--ink);border:1px solid var(--line-2);border-radius:8px;padding:6px 9px;font-weight:600"></td>
+      <td><select class="mini-sel" onchange="setRoomT(${i},this.value)">
+        ${RT.map(([k,lb])=>`<option value="${k}"${r.t===k?' selected':''}>${lb}</option>`).join('')}
+      </select></td>
+      <td><input value="${esc(r.f||'')}" onchange="setRoomF(${i},this.value)"
+           style="width:64px;background:var(--ink);border:1px solid var(--line-2);border-radius:8px;padding:6px 9px;text-align:center"></td>
+      <td style="text-align:right"><button class="btn danger sm" onclick="delRoom(${i})">✕</button></td>
+    </tr>`).join('')
+    : `<tr><td colspan="4" class="empty">Xona yo'q — pastdan qo'shing.</td></tr>`;
+
+  return `
+    <div class="card">
+      <div class="card-h"><h2>🏠 Xonalar (${rooms.length})</h2><span class="spacer"></span>
+        ${roomsDirty?`<span class="tag off">saqlanmagan</span>`:`<span class="tag ok">saqlangan</span>`}
+      </div>
+      ${chips?`<div class="card-b" style="padding:12px 20px 0"><div style="display:flex;gap:8px;flex-wrap:wrap">${chips}</div></div>`:''}
+      <div class="tbl-wrap" style="max-height:420px;overflow:auto"><table>
+        <thead><tr><th>Raqami</th><th>Turi</th><th>Qavat</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+
+      <div class="card-b" style="border-top:1px solid var(--line)">
+        <div style="font-weight:600;font-size:13.5px;margin-bottom:12px">➕ Bittalab qo'shish</div>
+        <div class="grid3">
+          <div class="field"><label>Raqami</label><input id="rN" class="mono" placeholder="101"></div>
+          <div class="field"><label>Turi</label><select id="rT">${RT.map(([k,lb])=>`<option value="${k}">${lb}</option>`).join('')}</select></div>
+          <div class="field"><label>Qavat</label><input id="rF" placeholder="1"></div>
+        </div>
+        <button class="btn ghost" onclick="addRoom()">Qo'shish</button>
+
+        <div style="border-top:1px dashed var(--line-2);margin:18px 0 14px"></div>
+        <div style="font-weight:600;font-size:13.5px;margin-bottom:12px">⇉ Ketma-ket qo'shish</div>
+        <div class="grid3">
+          <div class="field"><label>Dan</label><input id="bF" class="mono" placeholder="101"></div>
+          <div class="field"><label>Gacha</label><input id="bT" class="mono" placeholder="120"></div>
+          <div class="field"><label>Turi</label><select id="bTy">${RT.map(([k,lb])=>`<option value="${k}">${lb}</option>`).join('')}</select></div>
+        </div>
+        <div class="grid3">
+          <div class="field"><label>Qavat</label><input id="bFl" placeholder="1"></div>
+        </div>
+        <button class="btn ghost" onclick="addRange()">Ketma-ket qo'shish</button>
+
+        <div style="border-top:1px solid var(--line);margin:18px 0 14px"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn" id="rSave" onclick="saveRooms()">💾 Xonalarni saqlash</button>
+          <button class="btn ghost" onclick="openHotel(sel.id)">↺ Bekor qilish</button>
+        </div>
+        <div class="hint">Saqlanmaguncha o'zgarish serverga ketmaydi. «Bekor qilish» — oxirgi saqlangan holatga qaytaradi.</div>
+      </div>
+    </div>`;
+}
+
+function setRoomN(i,v){ rooms[i].n=String(v).trim(); roomsDirty=true; drawHotel(); }
+function setRoomT(i,v){ rooms[i].t=v; roomsDirty=true; drawHotel(); }
+function setRoomF(i,v){ rooms[i].f=String(v).trim(); roomsDirty=true; drawHotel(); }
+function delRoom(i){
+  if(!confirm(`Xona ${rooms[i].n} ro'yxatdan o'chirilsinmi?`)) return;
+  rooms.splice(i,1); roomsDirty=true; drawHotel();
+}
+function addRoom(){
+  const n=($('rN').value||'').trim();
+  if(!n){ toast('Raqamini yozing','bad'); return; }
+  if(rooms.some(r=>r.n===n)){ toast('Bu raqam allaqachon bor','bad'); return; }
+  rooms.push({ n, t:$('rT').value, f:($('rF').value||'').trim() });
+  rooms.sort((a,b)=>String(a.n).localeCompare(String(b.n),undefined,{numeric:true}));
+  roomsDirty=true; drawHotel(); toast('Qo\'shildi — saqlashni unutmang','good');
+}
+function addRange(){
+  const from=parseInt(($('bF').value||'').trim(),10);
+  const to=parseInt(($('bT').value||'').trim(),10);
+  if(!isFinite(from)||!isFinite(to)){ toast('Raqamlarni yozing','bad'); return; }
+  if(to<from){ toast('«Gacha» kattaroq bo\'lsin','bad'); return; }
+  if(to-from>500){ toast('Bir marta 500 tadan ko\'p emas','bad'); return; }
+  const t=$('bTy').value, f=($('bFl').value||'').trim();
+  let added=0;
+  for(let x=from;x<=to;x++){
+    const n=String(x);
+    if(rooms.some(r=>r.n===n)) continue;
+    rooms.push({n,t,f}); added++;
+  }
+  rooms.sort((a,b)=>String(a.n).localeCompare(String(b.n),undefined,{numeric:true}));
+  roomsDirty=true; drawHotel();
+  toast(added?`${added} ta xona qo'shildi — saqlang`:'Yangi xona qo\'shilmadi', added?'good':'bad');
+}
+async function saveRooms(){
+  if(!sel) return;
+  if(!rooms.length && !confirm('Xonalar ro\'yxati bo\'sh. Baribir saqlansinmi?')) return;
+  const btn=$('rSave'); btn.disabled=true; btn.innerHTML='<span class="spin"></span> Saqlanmoqda';
+  try{
+    const r=await call('rooms-set',{hotel:sel.id, rooms});
+    roomsDirty=false;
+    toast(`${r.count} ta xona saqlandi`,'good');
+    await loadHotels(sel.id);
+  }catch(e){
+    toast(e.message,'bad');
+    btn.disabled=false; btn.textContent='💾 Xonalarni saqlash';
+  }
+}
+
+/* ── 💰 to'lovlar ── */
+const MONTHS=['Yanvar','Fevral','Mart','Aprel','May','Iyun','Iyul','Avgust','Sentabr','Oktabr','Noyabr','Dekabr'];
+const money=(n,c)=>Number(n).toLocaleString('ru-RU',{maximumFractionDigits:2})+(c==='USD'?' $':" so'm");
+const dmy=s=>{ if(!s) return ''; const p=String(s).slice(0,10).split('-'); return p[2]+'.'+p[1]+'.'+p[0]; };
+const perLabel=p=>{ if(!p) return '—'; const [y,m]=String(p).split('-'); const i=+m-1;
+  return (MONTHS[i]||m)+' '+y; };
+
+function payCard(){
+  const now=new Date();
+  const thisPeriod=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+  const today=now.toISOString().slice(0,10);
+
+  // jami — valyuta bo'yicha alohida
+  let sumUZS=0, sumUSD=0;
+  for(const p of pays){ if(p.currency==='USD') sumUSD+=Number(p.amount); else sumUZS+=Number(p.amount); }
+  const last=pays[0];
+
+  const rows = pays.length ? pays.map(p=>`
+    <tr>
+      <td style="white-space:nowrap">${dmy(p.paid_at)}</td>
+      <td style="white-space:nowrap">${esc(perLabel(p.period))}</td>
+      <td class="mono" style="white-space:nowrap;font-weight:600">${money(p.amount,p.currency)}</td>
+      <td style="color:var(--muted);font-size:12.5px">${esc(p.note||'')}</td>
+      <td style="text-align:right">
+        <button class="btn danger sm" onclick="removePay(${p.id})">✕</button>
+      </td>
+    </tr>`).join('')
+    : `<tr><td colspan="5" class="empty">Hali to'lov yozilmagan.</td></tr>`;
+
+  // oy tanlash ro'yxati — shu oydan 12 oy orqaga
+  let opts='';
+  for(let i=0;i<14;i++){
+    const d=new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const v=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    opts+=`<option value="${v}"${v===thisPeriod?' selected':''}>${MONTHS[d.getMonth()]} ${d.getFullYear()}</option>`;
+  }
+
+  return `
+    <div class="card">
+      <div class="card-h"><h2>💰 To'lovlar (${pays.length})</h2><span class="spacer"></span>
+        ${last?`<span class="tag ok">oxirgi: ${dmy(last.paid_at)}</span>`:`<span class="tag off">to'lov yo'q</span>`}
+      </div>
+      <div class="card-b" style="padding:14px 20px 0">
+        <div style="display:flex;gap:22px;flex-wrap:wrap;font-size:13px;color:var(--muted)">
+          ${sumUZS?`<div>Jami so'mda: <b class="mono" style="color:var(--paper)">${money(sumUZS,'UZS')}</b></div>`:''}
+          ${sumUSD?`<div>Jami dollarda: <b class="mono" style="color:var(--paper)">${money(sumUSD,'USD')}</b></div>`:''}
+          ${(!sumUZS&&!sumUSD)?`<div>Hozircha tushum yo'q.</div>`:''}
+        </div>
+      </div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>To'lagan sana</th><th>Qaysi oy uchun</th><th>Summa</th><th>Izoh</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      <div class="card-b" style="border-top:1px solid var(--line)">
+        <div style="font-weight:600;font-size:13.5px;margin-bottom:12px">➕ Yangi to'lov yozish</div>
+        <div class="grid3">
+          <div class="field"><label>Summa</label>
+            <input id="pAmt" class="mono" inputmode="decimal" placeholder="500000"
+              oninput="this.value=this.value.replace(/[^0-9.]/g,'')"></div>
+          <div class="field"><label>Valyuta</label>
+            <select id="pCur"><option value="UZS">so'm (UZS)</option><option value="USD">dollar (USD)</option></select></div>
+          <div class="field"><label>Qaysi oy uchun</label>
+            <select id="pPer">${opts}</select></div>
+        </div>
+        <div class="grid3">
+          <div class="field"><label>To'lagan sana</label>
+            <input id="pDate" type="date" value="${today}"></div>
+          <div class="field" style="grid-column:span 2"><label>Izoh (ixtiyoriy)</label>
+            <input id="pNote" placeholder="naqd / plastik / o'tkazma"></div>
+        </div>
+        <button class="btn" id="pBtn" onclick="addPay()">To'lovni yozish</button>
+        <div class="hint">To'lov faqat sizga ko'rinadi — mehmonxona xodimlari buni hech qachon ko'rmaydi.</div>
+      </div>
+    </div>`;
+}
+
+async function addPay(){
+  if(!sel) return;
+  const amount=parseFloat($('pAmt').value||'0');
+  if(!isFinite(amount)||amount<=0){ toast('Summani yozing','bad'); return; }
+  const btn=$('pBtn'); btn.disabled=true; btn.innerHTML='<span class="spin"></span> Yozilmoqda';
+  try{
+    await call('payment-add',{
+      hotel:sel.id, amount,
+      currency:$('pCur').value,
+      paid_at:$('pDate').value,
+      period:$('pPer').value,
+      note:($('pNote').value||'').trim()
+    });
+    toast('To\'lov yozildi','good');
+    await openHotel(sel.id);
+  }catch(e){ toast(e.message,'bad'); btn.disabled=false; btn.textContent='To\'lovni yozish'; }
+}
+
+async function removePay(id){
+  if(!confirm('Bu to\'lov yozuvi o\'chirilsinmi?')) return;
+  try{ await call('payment-remove',{id}); toast('O\'chirildi','good'); await openHotel(sel.id); }
+  catch(e){ toast(e.message,'bad'); }
 }
 
 /* ── kalit yorlig'i ── */
