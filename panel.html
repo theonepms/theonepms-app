@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>THEONEPMS — Operator paneli</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+:root{
+  --ink:#101725; --panel:#18212f; --panel-2:#1e2938; --line:#26303f; --line-2:#334053;
+  --brass:#c99a4b; --brass-dim:#9a7536; --brass-glow:rgba(201,154,75,.14);
+  --paper:#e8e6e1; --muted:#8896a8; --muted-2:#5f6d80;
+  --ok:#4fa97a; --ok-bg:rgba(79,169,122,.12);
+  --bad:#d9635c; --bad-bg:rgba(217,99,92,.12);
+  --r:10px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--ink);color:var(--paper);
+  font-family:'Archivo',system-ui,sans-serif;font-size:14.5px;line-height:1.55;min-height:100vh;
+  background-image:radial-gradient(900px 500px at 15% -10%, rgba(201,154,75,.07), transparent 60%);}
+button,input,select{font:inherit;color:inherit}
+button{background:none;border:none;cursor:pointer}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+.wide-t{font-weight:700;letter-spacing:.06em}
+.hidden{display:none!important}
+
+#gate{min-height:100vh;display:grid;place-items:center;padding:24px}
+.gate-card{width:100%;max-width:400px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:34px 30px}
+.brand{display:flex;align-items:center;gap:11px;margin-bottom:6px}
+.brand-mark{width:26px;height:26px;border-radius:6px;background:var(--brass);position:relative;flex:none}
+.brand-mark::after{content:'';position:absolute;top:7px;left:7px;width:12px;height:12px;border-radius:50%;background:var(--panel)}
+.brand-name{font-size:17px}
+.gate-sub{color:var(--muted);font-size:13px;margin-bottom:24px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-bottom:6px;font-weight:600}
+.field input,.field select{width:100%;background:var(--ink);border:1px solid var(--line-2);border-radius:var(--r);padding:11px 13px;outline:none;transition:.15s}
+.field input:focus,.field select:focus{border-color:var(--brass);box-shadow:0 0 0 3px var(--brass-glow)}
+.field input::placeholder{color:var(--muted-2)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--brass);color:#1a1206;font-weight:700;padding:11px 20px;border-radius:var(--r);transition:.15s;white-space:nowrap}
+.btn:hover:not(:disabled){filter:brightness(1.09)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.wide{width:100%}
+.btn.ghost{background:transparent;border:1px solid var(--line-2);color:var(--paper);font-weight:500}
+.btn.ghost:hover:not(:disabled){border-color:var(--brass);color:var(--brass)}
+.btn.sm{padding:7px 13px;font-size:12.5px;border-radius:8px}
+.btn.danger{background:transparent;border:1px solid rgba(217,99,92,.4);color:var(--bad);font-weight:500}
+.btn.danger:hover:not(:disabled){background:var(--bad-bg)}
+.err{background:var(--bad-bg);border:1px solid rgba(217,99,92,.35);color:var(--bad);padding:10px 13px;border-radius:var(--r);font-size:13px;margin-bottom:14px}
+
+#app{display:grid;grid-template-columns:296px 1fr;min-height:100vh}
+aside{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.aside-h{padding:20px 20px 16px;border-bottom:1px solid var(--line)}
+.rack{flex:1;overflow-y:auto;padding:14px 12px}
+.rack-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted-2);font-weight:700;padding:0 8px 9px}
+.hook{display:block;width:100%;text-align:left;padding:12px 13px;border-radius:var(--r);border:1px solid transparent;margin-bottom:5px;transition:.13s;position:relative}
+.hook:hover{background:var(--panel-2)}
+.hook.on{background:var(--panel-2);border-color:var(--brass-dim)}
+.hook.on::before{content:'';position:absolute;left:0;top:13px;bottom:13px;width:2px;border-radius:2px;background:var(--brass)}
+.hook-name{font-weight:600;font-size:14px;margin-bottom:2px}
+.hook-meta{font-size:11.5px;color:var(--muted)}
+.hook.off .hook-name{color:var(--muted)}
+.aside-f{padding:14px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+main{padding:28px 34px 60px;max-width:1000px}
+.page-h{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:26px}
+.page-h h1{font-size:26px;letter-spacing:-.01em}
+.page-h .sub{color:var(--muted);font-size:13px;margin-top:3px}
+.spacer{flex:1}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin-bottom:18px;overflow:hidden}
+.card-h{padding:15px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+.card-h h2{font-size:14.5px;font-weight:600}
+.card-b{padding:20px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+@media(max-width:820px){.grid3{grid-template-columns:1fr}#app{grid-template-columns:1fr}aside{position:static;height:auto}main{padding:22px 18px 50px}}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700;padding:11px 20px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:13px 20px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:none}
+.tag{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
+.tag.ok{background:var(--ok-bg);color:var(--ok)}
+.tag.off{background:var(--bad-bg);color:var(--bad)}
+.mini-sel{background:var(--ink);border:1px solid var(--line-2);border-radius:8px;padding:5px 8px;font-size:12.5px}
+.empty{padding:30px 20px;text-align:center;color:var(--muted);font-size:13.5px}
+
+.keytag{position:relative;background:linear-gradient(150deg,#d7ab5d,#b78838 60%,#a2762d);
+  color:#241804;border-radius:12px;padding:22px 24px 20px 46px;margin-top:18px;
+  box-shadow:0 10px 26px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.35);
+  animation:tagIn .35s cubic-bezier(.2,.9,.3,1.2);}
+@keyframes tagIn{from{opacity:0;transform:translateY(-8px) rotate(-1.2deg)}to{opacity:1;transform:none}}
+.keytag::before{content:'';position:absolute;left:17px;top:50%;transform:translateY(-50%);
+  width:15px;height:15px;border-radius:50%;background:var(--panel);box-shadow:inset 0 1px 3px rgba(0,0,0,.6)}
+.keytag-h{font-size:10.5px;text-transform:uppercase;letter-spacing:.14em;font-weight:700;opacity:.68;margin-bottom:12px}
+.keytag-row{display:flex;align-items:baseline;gap:10px;padding:5px 0}
+.keytag-k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;opacity:.62;width:74px;flex:none;font-weight:600}
+.keytag-v{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:15px;word-break:break-all}
+.keytag-f{display:flex;gap:9px;margin-top:16px;flex-wrap:wrap}
+.keytag .btn{background:#241804;color:#e6c98d}
+.keytag .btn.ghost{background:transparent;border-color:rgba(36,24,4,.35);color:#241804}
+
+.hint{font-size:12.5px;color:var(--muted);line-height:1.6;margin-top:10px}
+.hint b{color:var(--paper);font-weight:600}
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(80px);background:var(--panel-2);border:1px solid var(--line-2);padding:12px 20px;border-radius:var(--r);font-size:13.5px;opacity:0;transition:.25s;z-index:99;box-shadow:0 12px 32px rgba(0,0,0,.5);max-width:90vw;text-align:center}
+#toast.on{opacity:1;transform:translateX(-50%)}
+#toast.bad{border-color:rgba(217,99,92,.45);color:#f0a9a5}
+#toast.good{border-color:rgba(79,169,122,.45);color:#8fd7b3}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.25);border-top-color:currentColor;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gate-card">
+    <div class="brand"><div class="brand-mark"></div><div class="brand-name wide-t">THEONEPMS</div></div>
+    <div class="gate-sub">Operator paneli — mehmonxonalar va xodimlar</div>
+    <div id="gateErr" class="err hidden"></div>
+    <div class="field"><label>Email</label><input id="gEmail" type="email" placeholder="siz@example.com" autocomplete="username"></div>
+    <div class="field"><label>Parol</label><input id="gPass" type="password" placeholder="••••••••" autocomplete="current-password"></div>
+    <button class="btn wide" id="gBtn" onclick="signIn()">Kirish</button>
+    <div class="hint" style="text-align:center;margin-top:16px">Bu panel faqat super-admin uchun.</div>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <aside>
+    <div class="aside-h">
+      <div class="brand"><div class="brand-mark"></div><div class="brand-name wide-t">THEONEPMS</div></div>
+      <div class="gate-sub" style="margin:2px 0 0">Operator paneli</div>
+    </div>
+    <div class="rack">
+      <div class="rack-label">Mehmonxonalar</div>
+      <div id="rack"></div>
+      <button class="hook" onclick="showNewHotel()" style="color:var(--brass);font-weight:600;margin-top:6px">+ Yangi mehmonxona</button>
+    </div>
+    <div class="aside-f">
+      <div id="whoami" class="mono" style="font-size:11.5px;margin-bottom:9px;color:var(--muted-2);word-break:break-all"></div>
+      <button class="btn ghost sm" onclick="signOut()">Chiqish</button>
+    </div>
+  </aside>
+  <main id="main"></main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const SB_URL='https://bmycnlhryfwjihjxxshp.supabase.co';
+const SB_KEY='sb_publishable_FGaZYRcF0mewLes59vAJeQ_jvWAZxGP';
+const SB=window.supabase.createClient(SB_URL,SB_KEY);
+const FN=SB_URL+'/functions/v1/admin';
+
+let hotels=[], sel=null, staff=[], busy=false, lastTag=null;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const roleName=r=>r==='manager'?'Menejer':r==='owner'?'Egasi':'Administrator';
+const appLink=()=>location.origin+location.pathname.replace(/panel\.html$/,'');
+
+let tT;
+function toast(msg,kind){
+  const t=$('toast'); t.textContent=msg; t.className='on '+(kind||'');
+  clearTimeout(tT); tT=setTimeout(()=>t.className='',3600);
+}
+async function call(action,payload){
+  const { data:{ session } }=await SB.auth.getSession();
+  if(!session) throw new Error('Sessiya tugadi — qaytadan kiring');
+  const r=await fetch(FN,{method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
+    body:JSON.stringify(Object.assign({action},payload||{}))});
+  const j=await r.json().catch(()=>({error:'Server javob bermadi'}));
+  if(j && j.error) throw new Error(j.error);
+  return j;
+}
+
+/* ── kirish ── */
+async function signIn(){
+  const btn=$('gBtn');
+  const email=$('gEmail').value.trim(), pass=$('gPass').value;
+  if(!email||!pass){ showErr('Email va parolni kiriting.'); return; }
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Tekshirilmoqda';
+  $('gateErr').classList.add('hidden');
+  try{
+    const { error }=await SB.auth.signInWithPassword({email,password:pass});
+    if(error) throw new Error('Email yoki parol xato.');
+    const me=await call('me');
+    if(!me.super){ await SB.auth.signOut(); throw new Error('Bu akkaunt super-admin emas.'); }
+    $('whoami').textContent=email;
+    $('gate').classList.add('hidden'); $('app').classList.remove('hidden');
+    await loadHotels();
+  }catch(e){ showErr(e.message||'Kirishda xato.'); }
+  btn.disabled=false; btn.textContent='Kirish';
+}
+function showErr(m){ const e=$('gateErr'); e.textContent=m; e.classList.remove('hidden'); }
+async function signOut(){ await SB.auth.signOut(); location.reload(); }
+$('gPass').addEventListener('keydown',e=>{ if(e.key==='Enter') signIn(); });
+$('gEmail').addEventListener('keydown',e=>{ if(e.key==='Enter') $('gPass').focus(); });
+
+/* ── mehmonxonalar ── */
+async function loadHotels(keep){
+  try{
+    const r=await call('hotels');
+    hotels=r.hotels||[];
+    sel = keep ? (hotels.find(h=>h.id===keep)||null)
+               : (sel ? hotels.find(h=>h.id===sel.id)||null : null);
+    if(!sel) sel=hotels.find(h=>h.active!==false)||hotels[0]||null;
+    drawRack();
+    if(sel) openHotel(sel.id); else showNewHotel();
+  }catch(e){ toast(e.message,'bad'); }
+}
+function drawRack(){
+  $('rack').innerHTML = hotels.length ? hotels.map(h=>`
+    <button class="hook ${sel&&h.id===sel.id?'on':''} ${h.active===false?'off':''}" onclick="openHotel('${esc(h.id)}')">
+      <div class="hook-name">${esc(h.name)}</div>
+      <div class="hook-meta">${h.rooms||0} xona · ${h.staff||0} xodim${h.active===false?" · o'chirilgan":''}</div>
+    </button>`).join('') : `<div class="hint" style="padding:8px">Hali mehmonxona yo'q.</div>`;
+}
+async function openHotel(id){
+  const h=hotels.find(x=>x.id===id); if(!h) return;
+  sel=h; lastTag=null; drawRack();
+  $('main').innerHTML=`<div class="empty"><span class="spin"></span> Yuklanmoqda…</div>`;
+  try{ const r=await call('staff',{hotel:id}); staff=r.staff||[]; }
+  catch(e){ staff=[]; toast(e.message,'bad'); }
+  drawHotel();
+}
+function drawHotel(){
+  const h=sel; if(!h) return;
+  const rows = staff.length ? staff.map(u=>`
+    <tr>
+      <td class="mono">${esc(u.email)}</td>
+      <td><select class="mini-sel" onchange="setRole('${esc(u.id)}',this.value)">
+        ${['admin','manager','owner'].map(r=>`<option value="${r}"${u.role===r?' selected':''}>${roleName(r)}</option>`).join('')}
+      </select></td>
+      <td style="color:var(--muted);font-size:12.5px;white-space:nowrap">${u.last_sign_in?esc(u.last_sign_in):'hali kirmagan'}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn ghost sm" onclick="askPassword('${esc(u.id)}','${esc(u.email)}')">Parol</button>
+        <button class="btn danger sm" onclick="removeStaff('${esc(u.id)}','${esc(u.email)}')">Chiqarish</button>
+      </td>
+    </tr>`).join('') : `<tr><td colspan="4" class="empty">Xodim yo'q. Pastdan qo'shing.</td></tr>`;
+
+  $('main').innerHTML=`
+    <div class="page-h">
+      <div>
+        <h1>${esc(h.name)}</h1>
+        <div class="sub mono">${esc(h.id)} · ${h.rooms||0} xona</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="tag ${h.active===false?'off':'ok'}" style="align-self:center">${h.active===false?"O'chirilgan":'Faol'}</span>
+      <button class="btn ghost sm" onclick="toggleHotel()">${h.active===false?'Yoqish':"O'chirish"}</button>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h2>Xodimlar (${staff.length})</h2></div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Email</th><th>Roli</th><th>Oxirgi kirish</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h2>Yangi xodim qo'shish</h2></div>
+      <div class="card-b">
+        <div class="grid3">
+          <div class="field"><label>Email</label><input id="sEmail" placeholder="admin@mehmonxona.uz" autocomplete="off"></div>
+          <div class="field"><label>Parol</label><input id="sPass" class="mono" placeholder="bo'sh qolsa — o'zi yaratiladi" autocomplete="new-password"></div>
+          <div class="field"><label>Roli</label><select id="sRole">
+            <option value="admin">Administrator — kunlik ish</option>
+            <option value="manager">Menejer — nazorat, hisobot</option>
+            <option value="owner">Egasi — faqat ko'radi</option>
+          </select></div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn" id="sBtn" onclick="createStaff()">Xodim yaratish</button>
+          <button class="btn ghost" onclick="genPass()">Parol o'ylab topish</button>
+        </div>
+        <div class="hint">Akkaunt shu yerda yaratiladi va <b>${esc(h.name)}</b> ga biriktiriladi. Supabase panelini ochish shart emas.</div>
+        <div id="tagSlot"></div>
+      </div>
+    </div>`;
+  if(lastTag) drawTag();
+}
+
+/* ── kalit yorlig'i ── */
+function drawTag(){
+  const slot=$('tagSlot'); if(!slot||!lastTag) return;
+  const t=lastTag;
+  slot.innerHTML=`
+    <div class="keytag">
+      <div class="keytag-h">Mijozga beriladigan ma'lumot</div>
+      <div class="keytag-row"><div class="keytag-k">Manzil</div><div class="keytag-v">${esc(t.link)}</div></div>
+      <div class="keytag-row"><div class="keytag-k">Email</div><div class="keytag-v">${esc(t.email)}</div></div>
+      <div class="keytag-row"><div class="keytag-k">Parol</div><div class="keytag-v">${esc(t.pass)}</div></div>
+      <div class="keytag-row"><div class="keytag-k">Roli</div><div class="keytag-v">${roleName(t.role)}</div></div>
+      <div class="keytag-f">
+        <button class="btn sm" onclick="copyTag()">Nusxa olish</button>
+        <button class="btn ghost sm" onclick="lastTag=null;drawHotel()">Yopish</button>
+      </div>
+    </div>`;
+}
+function copyTag(){
+  if(!lastTag) return;
+  const t=lastTag;
+  const txt=`THEONEPMS — kirish ma'lumoti\n\nManzil: ${t.link}\nEmail: ${t.email}\nParol: ${t.pass}\nRoli: ${roleName(t.role)}\n\nKirganda shu rol tugmasini tanlang.`;
+  navigator.clipboard.writeText(txt).then(()=>toast('Nusxa olindi','good'),()=>toast('Nusxa olinmadi','bad'));
+}
+function makePass(){
+  const lo='abcdefghijkmnpqrstuvwxyz', up='ABCDEFGHJKLMNPQRSTUVWXYZ', di='23456789';
+  const all=lo+up+di; const r=new Uint32Array(10); crypto.getRandomValues(r);
+  let s=up[r[0]%up.length]+lo[r[1]%lo.length]+di[r[2]%di.length];
+  for(let i=3;i<10;i++) s+=all[r[i]%all.length];
+  return s;
+}
+function genPass(){ const el=$('sPass'); if(el){ el.value=makePass(); toast('Parol tayyor','good'); } }
+
+/* ── amallar ── */
+async function createStaff(){
+  if(busy) return;
+  const email=($('sEmail').value||'').trim().toLowerCase();
+  let pass=($('sPass').value||'').trim();
+  const role=$('sRole').value;
+  if(!email||email.indexOf('@')<1){ toast("To'g'ri email yozing",'bad'); return; }
+  if(pass && pass.length<8){ toast('Parol kamida 8 belgi bo\'lsin','bad'); return; }
+  if(!pass) pass=makePass();
+  const btn=$('sBtn'); busy=true; btn.disabled=true; btn.innerHTML='<span class="spin"></span> Yaratilmoqda';
+  try{
+    await call('staff-add',{email,password:pass,hotel:sel.id,role});
+    lastTag={link:appLink(),email,pass,role};
+    toast('Xodim yaratildi','good');
+    await loadHotels(sel.id);
+  }catch(e){
+    toast(e.message==='user_exists'
+      ? 'Bu email band. Boshqa email yozing.'
+      : e.message,'bad');
+    busy=false; btn.disabled=false; btn.textContent='Xodim yaratish'; return;
+  }
+  busy=false;
+}
+async function setRole(id,role){
+  try{ await call('staff-role',{user_id:id,hotel:sel.id,role});
+    const u=staff.find(x=>x.id===id); if(u) u.role=role;
+    toast('Rol o\'zgartirildi','good');
+  }catch(e){ toast(e.message,'bad'); openHotel(sel.id); }
+}
+async function askPassword(id,email){
+  const p=prompt(`${email} uchun yangi parol (kamida 8 belgi):`, makePass());
+  if(p===null) return;
+  if(p.trim().length<8){ toast("Parol kamida 8 belgi bo'lsin",'bad'); return; }
+  try{
+    await call('staff-password',{user_id:id,password:p.trim()});
+    const u=staff.find(x=>x.id===id);
+    lastTag={link:appLink(),email,pass:p.trim(),role:(u&&u.role)||'admin'};
+    toast('Parol almashtirildi','good'); drawHotel();
+  }catch(e){ toast(e.message,'bad'); }
+}
+async function removeStaff(id,email){
+  if(!confirm(`${email} shu mehmonxonadan chiqarilsinmi?\n\nAkkaunt o'chmaydi — faqat kirish huquqi olinadi.`)) return;
+  try{
+    await call('staff-remove',{user_id:id,hotel:sel.id});
+    toast('Xodim chiqarildi','good');
+    await loadHotels(sel.id);
+  }catch(e){ toast(e.message,'bad'); }
+}
+async function toggleHotel(){
+  const on=sel.active===false;
+  if(!confirm(on?`"${sel.name}" yoqilsinmi?`:`"${sel.name}" o'chirilsinmi?\n\nXodimlari kira olmaydi. Ma'lumot saqlanadi.`)) return;
+  try{ await call('hotel-toggle',{id:sel.id,active:on});
+    toast(on?'Yoqildi':"O'chirildi",'good'); await loadHotels(sel.id); }
+  catch(e){ toast(e.message,'bad'); }
+}
+
+/* ── yangi mehmonxona ── */
+function showNewHotel(){
+  sel=null; drawRack(); lastTag=null;
+  $('main').innerHTML=`
+    <div class="page-h"><div>
+      <h1>Yangi mehmonxona</h1>
+      <div class="sub">Qo'shilgach xodimlarini shu yerdan yaratasiz.</div>
+    </div></div>
+    <div class="card"><div class="card-b">
+      <div class="grid3">
+        <div class="field"><label>Nomi</label><input id="hName" placeholder="Dedeman Hotel" oninput="suggestId()"></div>
+        <div class="field"><label>Kodi</label><input id="hId" class="mono" placeholder="dedeman_hotel"></div>
+        <div class="field"><label>Xonalar soni</label><input id="hRooms" type="text" inputmode="numeric" value="30" oninput="this.value=this.value.replace(/[^0-9]/g,'')"></div>
+      </div>
+      <button class="btn" id="hBtn" onclick="createHotel()">Mehmonxona qo'shish</button>
+      <div class="hint"><b>Kodi</b> — ichki nom, keyin o'zgarmaydi. Faqat lotin harflar, raqam va pastki chiziq.</div>
+    </div></div>`;
+}
+function suggestId(){
+  const id=$('hId'); if(!id||id.dataset.touched) return;
+  id.value=($('hName').value||'').toLowerCase().replace(/['`’]/g,'')
+    .replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,30);
+}
+async function createHotel(){
+  const name=($('hName').value||'').trim();
+  const id=($('hId').value||'').trim().toLowerCase().replace(/[^a-z0-9_]/g,'_');
+  const rooms=+($('hRooms').value||0);
+  if(!name){ toast('Nomini yozing','bad'); return; }
+  if(!id){ toast('Kodini yozing','bad'); return; }
+  if(hotels.some(h=>h.id===id)){ toast('Bu kod band — boshqasini tanlang','bad'); return; }
+  const btn=$('hBtn'); btn.disabled=true; btn.innerHTML='<span class="spin"></span> Qo\'shilmoqda';
+  try{ await call('hotel-add',{id,name,rooms}); toast('Mehmonxona qo\'shildi','good'); await loadHotels(id); }
+  catch(e){ toast(e.message,'bad'); btn.disabled=false; btn.textContent='Mehmonxona qo\'shish'; }
+}
+document.addEventListener('input',e=>{ if(e.target&&e.target.id==='hId') e.target.dataset.touched='1'; });
+
+/* sessiya bo'lsa — darrov ichkariga */
+(async()=>{
+  try{
+    const { data:{ session } }=await SB.auth.getSession();
+    if(!session) return;
+    const me=await call('me');
+    if(me.super){
+      $('whoami').textContent=session.user.email;
+      $('gate').classList.add('hidden'); $('app').classList.remove('hidden');
+      await loadHotels();
+    }
+  }catch(e){}
+})();
+</script>
+</body>
+</html>
