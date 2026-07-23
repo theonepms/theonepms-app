@@ -861,6 +861,7 @@ async function tgCheck(){
 }
 /* Ulash kodi olish */
 async function tgGetCode(){
+  if(!isSuper){ toast("Bu amal faqat dastur operatoriga ruxsat etilgan.",false); return; }
   try{
     const r=await tgCall('link-code',{hotel:HOTEL_ID});
     if(r&&r.code){ tgCode=r.code; render(); toast('Kod tayyor — botga yuboring',true); }
@@ -869,6 +870,7 @@ async function tgGetCode(){
 }
 /* Ulanishni uzish */
 async function tgUnlink(){
+  if(!isSuper){ toast("Bu amal faqat dastur operatoriga ruxsat etilgan.",false); return; }
   if(!confirm('Telegram uzilsinmi?\n\nKirish kodlari va hisobotlar kelmay qoladi.')) return;
   try{ await tgCall('unlink'); tgLinked=false; tgCode=''; render();
     toast('Telegram uzildi',true); }
@@ -4555,6 +4557,7 @@ function roomsGuard(){
 }
 /* Xona raqamini o'zgartirish — bronlar ham ko'chadi */
 function setRoomNum(i,val){
+  if(!isSuper){ toast("Bu amal faqat dastur operatoriga ruxsat etilgan.",false); return; }
   if(!roomsGuard()) return render();
   const v=(val||'').trim().toUpperCase();
   const old=rooms[i].n;
@@ -4569,17 +4572,20 @@ function setRoomNum(i,val){
   toast(moved?`${old} → ${v} (${moved} ta bron ko'chdi) ✓`:`${old} → ${v} ✓`,true);
 }
 function setRoomType(i,v){
+  if(!isSuper){ toast("Bu amal faqat dastur operatoriga ruxsat etilgan.",false); return; }
   if(!roomsGuard()) return render();
   rooms[i].t=v; lastFingerprint=''; saveState(); render();
   toast(`${rooms[i].n} — ${typeLabel(v)} ✓`,true);
 }
 function setRoomFloor(i,v){
+  if(!isSuper){ toast("Bu amal faqat dastur operatoriga ruxsat etilgan.",false); return; }
   if(!roomsGuard()) return render();
   const f=parseInt(v,10);
   rooms[i].f=isNaN(f)?'':f; lastFingerprint=''; saveState(); render();
 }
 /* Bitta xona qo'shish */
 function addRoom(){
+  if(!isSuper){ toast("Bu amal faqat dastur operatoriga ruxsat etilgan.",false); return; }
   if(!roomsGuard()) return;
   const n=(document.getElementById('nrNum').value||'').trim().toUpperCase();
   const t=document.getElementById('nrType').value;
@@ -4594,6 +4600,7 @@ function addRoom(){
 }
 /* Ketma-ket qo'shish: 101 dan 120 gacha */
 function addRoomRange(){
+  if(!isSuper){ toast("Bu amal faqat dastur operatoriga ruxsat etilgan.",false); return; }
   if(!roomsGuard()) return;
   const a=(document.getElementById('brFrom').value||'').trim();
   const b=(document.getElementById('brTo').value||'').trim();
@@ -4617,6 +4624,7 @@ function addRoomRange(){
 }
 /* Xonani o'chirish — yashovchisi bo'lsa RUXSAT YO'Q */
 function delRoom(i){
+  if(!isSuper){ toast("Bu amal faqat dastur operatoriga ruxsat etilgan.",false); return; }
   if(!roomsGuard()) return;
   const r=rooms[i]; if(!r) return;
   const live=stays.filter(s=>s.room===r.n && s.status!=='canceled' && s.status!=='out');
@@ -4643,7 +4651,7 @@ function renderSettings(){
     <span style="font-size:20px">${flag}</span><div><b>${label}</b><span>${code.toUpperCase()}</span></div></button>`;
 
   /* ═══ 📱 TELEGRAM — faqat MENEJER (kirish kodi + nochnoy audit hisoboti) ═══ */
-  const tgPanel=(role==='manager')?`
+  const tgPanel=isSuper?`
     <div class="panel"><div class="panel-h"><h3>📱 Telegram</h3><span class="spacer"></span>
       ${tgLinked?'<span class="tag paid">Ulangan</span>':'<span class="tag" style="background:var(--amber-bg);color:var(--amber-ink)">Ulanmagan</span>'}</div>
       <div class="panel-b" style="padding:18px 20px">
@@ -4684,7 +4692,7 @@ function renderSettings(){
     </tr>`;
   }).join('') : `<tr><td colspan="5" style="color:var(--txt-3);padding:12px">Xona yo'q — pastdan qo'shing</td></tr>`;
 
-  const roomsPanel=mgr?`
+  const roomsPanel=isSuper?`
     <div class="panel"><div class="panel-h"><h3>🏠 Xonalar (${rooms.length})</h3><span class="spacer"></span>
       <span class="roleonly">Faqat menejer</span></div>
       <div class="panel-b" style="padding:0">
@@ -4725,9 +4733,9 @@ function renderSettings(){
         ${role==='manager'?`<div class="arr-item"><div class="who"><b>🔒 Nazorat jurnali serverda</b><span>Sezgir amallar serverga darhol yoziladi — hech kim o'chira olmaydi (admin ham, menejer ham).</span></div><span class="tag paid">Yoqilgan</span></div>`:''}
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
           <button class="btn btn-ghost" onclick="exportPageExcel()" style="padding:9px 16px">⤓ Joriy sahifani Excelga</button>
-          ${role==='manager'?`<button class="btn btn-ghost" onclick="resetState()" style="padding:9px 16px;color:var(--red-ink);border-color:var(--red)">⚠ Serverni tozalash (hammasi o'chadi)</button>`:''}
+          ${isSuper?`<button class="btn btn-ghost" onclick="resetState()" style="padding:9px 16px;color:var(--red-ink);border-color:var(--red)">⚠ Serverni tozalash (hammasi o'chadi)</button>`:''}
         </div>
-        <div class="mini-hint" style="padding:10px 0 0">${role==='manager'?'⚠ "Serverni tozalash" — <b>barcha mehmon va to\'lov ma\'lumoti</b> butunlay o\'chadi. Faqat boshdan boshlash kerak bo\'lsa bosing.':'Ma\'lumot serverda xavfsiz saqlanmoqda.'}</div>
+        <div class="mini-hint" style="padding:10px 0 0">${isSuper?'⚠ "Serverni tozalash" — <b>barcha mehmon va to\'lov ma\'lumoti</b> butunlay o\'chadi. Faqat boshdan boshlash kerak bo\'lsa bosing.':'Ma\'lumot serverda xavfsiz saqlanmoqda.'}</div>
       </div></div>
     <div class="panel"><div class="panel-h"><h3>${t('til')}</h3><span class="spacer"></span><span class="pill">${LANG.toUpperCase()}</span></div>
       <div class="panel-b" style="padding:18px 20px">
@@ -5386,6 +5394,7 @@ async function seedCleanStart(){
 }
 
 function resetState(){
+  if(!isSuper){ toast("Bu amal faqat dastur operatoriga ruxsat etilgan.",false); return; }
   if(role!=='manager'){ toast('Bu amalni faqat menejer bajaradi.',false); return; }
   if(!confirm("SERVERDAGI barcha ma'lumot o'chadi:\n• Mehmonlar va bronlar\n• To'lovlar\n• ADMIN NAZORATI JURNALI\n\nBu qaytarib bo'lmaydi! Davom etasizmi?")) return;
   if(!confirm("Ishonchingiz komilmi? Nazorat jurnali ham o'chadi.")) return;
