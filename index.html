@@ -834,12 +834,12 @@ async function doLogout(){
 }
 function backToStep1(){ clearInterval(mfaTimer); document.getElementById('loginStep2').classList.add('hidden'); document.getElementById('loginStep1').classList.remove('hidden'); }
 /* ═══════════ 📱 TELEGRAM ═══════════ */
-const TG_URL = SB_URL + '/functions/v1/tg';
+/* ⚠️ SB_URL fayl oxirida e'lon qilinadi — shuning uchun manzilni chaqiruv paytida yig'amiz */
 async function tgCall(action, extra){
   if(!SB) throw new Error('server yo\'q');
   const { data:{ session } } = await SB.auth.getSession();
   const tok = session ? session.access_token : '';
-  const r = await fetch(TG_URL, {
+  const r = await fetch(SB_URL + '/functions/v1/tg', {
     method:'POST',
     headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+tok },
     body: JSON.stringify(Object.assign({action}, extra||{}))
