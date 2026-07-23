@@ -1632,14 +1632,16 @@ function isZeroPriceStay(s){
   return stayCost<=0;
 }
 function stayBg(s){
-  const p=paidSum(s), n=nights(s), rates=s.rates||Array(n).fill(s.price/n);
+  const p=paidSum(s), n=nights(s), rates=(s.rates&&s.rates.length)?s.rates:Array(n).fill((s.price||0)/n);
   let covered=0,acc=0;
-  for(let i=0;i<n;i++){ acc+=rates[i]; if(p+1e-6>=acc) covered=i+1; else break; }
+  for(let i=0;i<n;i++){ const r=+rates[i]||0; acc+=r; if(p+1e-6>=acc) covered=i+1; else break; }
   if(s.status==='canceled') return `${statusColors.cancel};background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.16) 0 5px,transparent 5px 10px)`;
   if(s.status==='out'){
     if(isZeroPriceStay(s)) return statusColors.outdebt;   // 0 narx → abadiy qizil
     return balance(s)>0 ? statusColors.outdebt : statusColors.out;
   }
+  // ⚠️ NARX 0, LEKIN PUL OLINGAN — xato/shubhali. Yashil bo'lmasin, ko'zga tashlansin.
+  if(isZeroPriceStay(s) && p>0) return `${statusColors.outdebt};background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.28) 0 5px,transparent 5px 10px)`;
   if(isZeroPriceStay(s)) return s.status==='in'?statusColors.in:statusColors.book;  // 0 narx — "to'langan" deb ko'rsatmaymiz
   if(covered>=n) return statusColors.paid;
   if(covered<=0) return s.status==='in'?statusColors.in:statusColors.book;
@@ -2159,6 +2161,11 @@ function saveReg(status){
   }
   if(r.nightly===''||r.nightly===null||r.nightly===undefined||isNaN(+r.nightly)){toast('1 kunlik xona narxini kiriting (bepul bo\'lsa 0 yozing).',false);return;}
   if(+r.nightly<0){toast('Narx manfiy bo\'lishi mumkin emas.',false);return;}
+  // ⛔ NARX 0, LEKIN TO'LOV BOR — bu xato. Aks holda bron "to'langan" bo'lib qoladi va qarz ko'rinmaydi.
+  if(+r.nightly===0 && (+r.pay.amount||0)>0){
+    toast('Xona narxi 0, lekin to\'lov kiritilgan. 1 kunlik narxni yozing (rostdan bepul bo\'lsa — to\'lovni ham 0 qiling).',false);
+    return;
+  }
   const stamp=fmtShort(base)+' '+r.arrTime;
   const created=[];
   const roomCount=r.rooms.length;
@@ -2211,23 +2218,23 @@ function openFolio(id,keepEdit){
     actBtns=gbtn('openInvoice','🧾 '+t('invoice'));
   } else if(s.status==='book'){
     if(canCheckin) actBtns+=gbtn('doCheckin','✓ Check-in qilish','primary');
+    if(can('price',s)) actBtns+=gbtn('doMovePrice','💰 Narxni o\'zgartirish'+(isZeroPriceStay(s)?' ⚠️':''), isZeroPriceStay(s)?'warn':'');
     actBtns+=gGroup('₸','To\'lov',[['addFolioPay','To\'lov qo\'shish']]);
     const bItems=[];
     if(can('rebook',s))   bItems.push(['doRebook','📅 Kelish sanasini o\'zgartirish']);
     if(can('extend',s))   bItems.push(['doExtend','📅 Muddatni cho\'zish']);
     if(can('moveRoom',s)) bItems.push(['doMoveRoom','↔ Xona ko\'chirish']);
-    if(can('price',s))    bItems.push(['doMovePrice','💰 Narxni o\'zgartirish']);
     if(bItems.length) actBtns+=gGroup('↔','Xona / sana',bItems);
     actBtns+=gbtn('openInvoice','🧾 '+t('invoice'))+gbtn('doCancel','✕ Bekor qilish','danger');
   } else if(s.status==='in'){
     actBtns+=gbtn('doCheckout','🚪 Check-out','primary');
+    if(can('price',s)) actBtns+=gbtn('doMovePrice','💰 Narxni o\'zgartirish'+(isZeroPriceStay(s)?' ⚠️':''), isZeroPriceStay(s)?'warn':'');
     actBtns+=gGroup('₸','To\'lov / vozvrat',[['addFolioPay','₸ To\'lov qo\'shish'],
       ['doRefund', can('cashRefund',s)?'↩ VOZVRAT (qaytarish)':'↩ Hisobdan olib tashlash']]);
     actBtns+=gGroup('🛏','Hisobga qo\'shish',[['doCharge','🧾 Xizmat qo\'shish (mini-bar, kir yuvish...)'],['doServiceAdd','➕ Yashash qo\'shish'],['doEarlyLate','🕐 Erta kirish / Kech chiqish']]);
     const rItems=[];
     if(can('moveRoom',s)) rItems.push(['doMoveRoom','↔ Xona ko\'chirish']);
     if(can('extend',s))   rItems.push(['doExtend','📅 Muddatni cho\'zish']);
-    if(can('price',s))    rItems.push(['doMovePrice','💰 Narxni o\'zgartirish']);
     if(rItems.length) actBtns+=gGroup('↔','Xona',rItems);
     actBtns+=gbtn('openInvoice','🧾 '+t('invoice'))+gbtn('doCancel','✕ Bekor qilish','danger');
   } else { // out (check-out qilingan)
@@ -2449,7 +2456,7 @@ function can(action,s){
     case 'chargeCancel': return true;              // to'lanmagan xizmatni bekor qilish
     case 'moveRoom':     return stayIsToday(s);    // xona — FAQAT joriy kun
     case 'extend':       return stayIsToday(s);    // muddat — faqat joriy kun, faqat uzaytirish
-    case 'price':        return false;             // ⛔ narx — menejer
+    case 'price':        return stayIsToday(s);    // narx — FAQAT joriy kun (eski kunlar qotgan)
     case 'cashRefund':   return false;             // ⛔ kassadan pul qaytarish — menejer
     case 'rebook':       return false;             // ⛔ kelish sanasi — menejer
     case 'restore':      return false;             // ⛔ vastanavit — menejer
@@ -3105,10 +3112,21 @@ function commitAction(){
   } else if(a.kind==='extend'){
     const nn=Math.max(1,+a.newNights); const oldn=nights(s);
     if(nn===oldn){closeAction();return;}
+    if(nn>oldn){
+      // ⛔ Yangi kunlarga qo'yiladigan narx — 0 bo'lmasin (aks holda qarz ko'rinmay qoladi)
+      let rate=+s.nightly || +s.rates[oldn-1] || 0;
+      if(!rate){
+        const rm=rooms.find(x=>x.n===s.room);
+        rate=(rm && typeRates[rm.t]) || 0;
+      }
+      if(!rate){
+        toast('Bu bronda 1 kunlik narx yo\'q (0). Avval «💰 Narxni o\'zgartirish» bilan narxni yozing, keyin cho\'zing.',false);
+        return;
+      }
+      for(let i=oldn;i<nn;i++) s.rates[i]=rate;
+      s.nightly=s.nightly||rate;
+    } else s.rates=s.rates.slice(0,nn);
     s.outDate=new Date(stripTime(s.inDate).getTime()+nn*DAY);
-    // ratesni moslash
-    if(nn>oldn){ for(let i=oldn;i<nn;i++) s.rates[i]=s.nightly||s.rates[oldn-1]; }
-    else s.rates=s.rates.slice(0,nn);
     recalc(s);
     logAction(s,'move',`Muddat o'zgardi: ${oldn} → ${nn} tun (chiqish ${fmt(s.outDate)})`,0);
     toast('Muddat cho\'zildi — narx avtomatik yangilandi ✓',true);
@@ -3541,6 +3559,20 @@ function shubhaList(){
     if(!lvl) return;
     const key=(a.day||'')+'|'+(a.time||'')+'|'+(a.room||'')+'|'+txt.slice(0,40);
     out.push({key,idx,a,lvl,why,byRole});
+  });
+  // ⚠️ NARX 0, LEKIN PUL OLINGAN — jurnalda emas, bronning o'zida turgan xato
+  stays.forEach(s=>{
+    if(s.status==='canceled') return;
+    const p=paidSum(s);
+    if(p>0 && isZeroPriceStay(s)){
+      out.push({ key:'zero_'+s.id, idx:-1, lvl:'high',
+        why:'Narx 0, lekin pul olingan — hisob noto\'g\'ri',
+        byRole:'admin',
+        a:{ room:s.room, guest:(s.firstName||'')+' '+(s.lastName||''),
+            text:`⚠️ NARX 0, LEKIN ${money(p)} TO'LOV OLINGAN — 1 kunlik narx yozilmagan`,
+            amount:p, reason:'Narxni «💰 Narxni o\'zgartirish» bilan to\'g\'rilang',
+            by:'—', time:fmt(s.inDate), day:ymd(s.inDate), stayDate:fmt(s.inDate), type:'warn' } });
+    }
   });
   return out;
 }
