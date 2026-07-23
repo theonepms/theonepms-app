@@ -804,6 +804,14 @@ async function loginNext(){
 async function afterLogin(r){
   const btn=document.getElementById('loginBtn');
   if(btn){btn.disabled=true;btn.textContent='Ma\'lumot yuklanmoqda...';}
+  // Super-admin: kirilayotgan mehmonxonaning standart sozlamasini qo'yamiz (settings bo'lmasa ham to'g'ri chiqsin)
+  if(isSuper && myHotel){
+    const h=allHotels.find(x=>x.id===myHotel);
+    if(h && myHotel!=='grand_capital'){
+      rooms=defaultRooms(h.rooms||30);
+      hotelCfg={name:h.name, currency:'UZS', rooms:(h.rooms||30)};
+    }
+  }
   await cloudLoad();          // serverdan ma'lumotni tortamiz
   enterApp(r);
   startCloudSync();           // boshqa admin o'zgartirsa — ko'rinadi
@@ -3974,14 +3982,33 @@ async function loadHotelStats(){
   render();
   toast('Hisob yangilandi ✓',true);
 }
+/* Yangi mehmonxona uchun standart xona ro'yxati (2-qavatdan boshlab) */
+function defaultRooms(count){
+  const out=[]; let f=2, n=1;
+  while(out.length<count){
+    const num=String(f)+String(n).padStart(2,'0');
+    out.push({n:num, t:(n===1?'lux':(n%6===0?'twin':(n%7===0?'dlx':'std'))), f});
+    n++; if(n>13){ f++; n=1; }
+  }
+  return out;
+}
 /* Boshqa mehmonxonaga o'tish */
 async function switchHotel(id,name){
   if(!isSuper) return;
   if(!confirm(`"${name}" mehmonxonasiga o'tasizmi?\n\nJoriy ma'lumot saqlanadi, keyin yangisi yuklanadi.`)) return;
   try{ await cloudSave(); }catch(e){}
+  const h=allHotels.find(x=>x.id===id)||{};
   HOTEL_ID=id; myHotel=id; myHotelName=name;
-  stays=[]; auditLog=[]; roomBlocks=[]; lastFingerprint=''; lastSavedAt=0; cloudLoadedOK=false;
-  await cloudLoad();
+  // ⚠️ Yangi mehmonxona — hammasi TOZALANADI (eskisining xonalari/sozlamasi qolmasin)
+  stays=[]; auditLog=[]; roomBlocks=[]; shifts=[]; pendingBookings=[]; emArchive={};
+  rooms=defaultRooms(h.rooms||30);
+  hotelCfg={name:name, currency:'UZS', rooms:(h.rooms||30)};
+  typeRates={std:400000,twin:500000,dlx:700000,lux:1200000};
+  companies=['Walk-in (ko\'chadan)','Booking.com','To\'g\'ridan-to\'g\'ri','Telefon orqali'];
+  lastFingerprint=''; lastSavedAt=0; cloudLoadedOK=false;
+  await cloudLoad();          // agar bu hotelning o'z sozlamasi bo'lsa — ustiga yoziladi
+  const p=document.getElementById('hotelPill');
+  if(p) p.innerHTML=`🏢 ${hotelCfg.name} <span style="opacity:.6">· super-admin</span>`;
   page='dashboard'; render(); buildNav();
   toast(`${name} — ochildi ✓`,true);
 }
