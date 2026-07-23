@@ -4365,16 +4365,147 @@ function colorRow(key,label){
     <div class="cr-swatches">${swatches}</div>
   </div>`;
 }
+/* ═══════════ 🏠 XONALARNI BOSHQARISH (faqat menejer) ═══════════ */
+function roomsGuard(){
+  if(role!=='manager'){ toast('Xonalarni faqat menejer o\'zgartiradi.',false); return false; }
+  return true;
+}
+/* Xona raqamini o'zgartirish — bronlar ham ko'chadi */
+function setRoomNum(i,val){
+  if(!roomsGuard()) return render();
+  const v=(val||'').trim().toUpperCase();
+  const old=rooms[i].n;
+  if(!v){ toast('Raqam bo\'sh bo\'lmasin.',false); return render(); }
+  if(v===old) return;
+  if(rooms.some((r,j)=>j!==i && r.n===v)){ toast(`${v} — bunday xona allaqachon bor.`,false); return render(); }
+  let moved=0;
+  stays.forEach(s=>{ if(s.room===old){ s.room=v; moved++; } });
+  roomBlocks.forEach(b=>{ if(b.room===old) b.room=v; });
+  rooms[i].n=v;
+  lastFingerprint=''; saveState(); render();
+  toast(moved?`${old} → ${v} (${moved} ta bron ko'chdi) ✓`:`${old} → ${v} ✓`,true);
+}
+function setRoomType(i,v){
+  if(!roomsGuard()) return render();
+  rooms[i].t=v; lastFingerprint=''; saveState(); render();
+  toast(`${rooms[i].n} — ${typeLabel(v)} ✓`,true);
+}
+function setRoomFloor(i,v){
+  if(!roomsGuard()) return render();
+  const f=parseInt(v,10);
+  rooms[i].f=isNaN(f)?'':f; lastFingerprint=''; saveState(); render();
+}
+/* Bitta xona qo'shish */
+function addRoom(){
+  if(!roomsGuard()) return;
+  const n=(document.getElementById('nrNum').value||'').trim().toUpperCase();
+  const t=document.getElementById('nrType').value;
+  const f=parseInt(document.getElementById('nrFloor').value,10);
+  if(!n){ toast('Raqamini yozing.',false); return; }
+  if(rooms.some(r=>r.n===n)){ toast(`${n} — bunday xona allaqachon bor.`,false); return; }
+  rooms.push({n, t, f:isNaN(f)?'':f});
+  sortRooms();
+  document.getElementById('nrNum').value='';
+  lastFingerprint=''; saveState(); render();
+  toast(`${n}-xona qo'shildi ✓`,true);
+}
+/* Ketma-ket qo'shish: 101 dan 120 gacha */
+function addRoomRange(){
+  if(!roomsGuard()) return;
+  const a=(document.getElementById('brFrom').value||'').trim();
+  const b=(document.getElementById('brTo').value||'').trim();
+  const t=document.getElementById('brType').value;
+  const f=parseInt(document.getElementById('brFloor').value,10);
+  const n1=parseInt(a,10), n2=parseInt(b,10);
+  if(isNaN(n1)||isNaN(n2)){ toast('Ikkala raqamni ham yozing (masalan 101 va 120).',false); return; }
+  if(n2<n1){ toast('"gacha" raqami kattaroq bo\'lsin.',false); return; }
+  if(n2-n1>200){ toast('Bir marta 200 tadan ko\'p qo\'shib bo\'lmaydi.',false); return; }
+  let added=0, skipped=0;
+  for(let n=n1;n<=n2;n++){
+    const num=String(n);
+    if(rooms.some(r=>r.n===num)){ skipped++; continue; }
+    rooms.push({n:num, t, f:isNaN(f)?'':f});
+    added++;
+  }
+  sortRooms();
+  document.getElementById('brFrom').value=''; document.getElementById('brTo').value='';
+  lastFingerprint=''; saveState(); render();
+  toast(`${added} ta xona qo'shildi${skipped?` (${skipped} tasi bor edi)`:''} ✓`,true);
+}
+/* Xonani o'chirish — yashovchisi bo'lsa RUXSAT YO'Q */
+function delRoom(i){
+  if(!roomsGuard()) return;
+  const r=rooms[i]; if(!r) return;
+  const live=stays.filter(s=>s.room===r.n && s.status!=='canceled' && s.status!=='out');
+  if(live.length){ toast(`${r.n}-xonada ${live.length} ta bron bor — avval ularni ko'chiring yoki chiqaring.`,false); return; }
+  const old=stays.filter(s=>s.room===r.n).length;
+  if(!confirm(`${r.n}-xona o'chirilsinmi?${old?`\n\n⚠️ Bu xonaning ${old} ta eski (arxiv) yozuvi bor — ular saqlanadi, lekin shaxmatkada ko'rinmaydi.`:''}`)) return;
+  rooms.splice(i,1);
+  lastFingerprint=''; saveState(); render();
+  toast(`${r.n}-xona o'chirildi`,true);
+}
+/* Xonalarni qavat va raqam bo'yicha tartiblash */
+function sortRooms(){
+  rooms.sort((a,b)=>{
+    const fa=+a.f||0, fb=+b.f||0;
+    if(fa!==fb) return fa-fb;
+    const na=parseInt(a.n,10), nb=parseInt(b.n,10);
+    if(!isNaN(na)&&!isNaN(nb)&&na!==nb) return na-nb;
+    return String(a.n).localeCompare(String(b.n));
+  });
+}
 function renderSettings(){
   const mgr=role==='manager';
   const langBtn=(code,label,flag)=>`<button class="rolebtn ${LANG===code?'on':''}" style="display:flex;align-items:center;gap:10px" onclick="setLang('${code}')">
     <span style="font-size:20px">${flag}</span><div><b>${label}</b><span>${code.toUpperCase()}</span></div></button>`;
+
+  /* ═══ 🏠 XONALAR — qo'shish / tahrirlash / o'chirish ═══ */
+  const roomRows=rooms.length? rooms.map((r,i)=>{
+    const busy=stays.filter(s=>s.room===r.n && s.status!=='canceled' && s.status!=='out').length;
+    return `<tr>
+      <td><input value="${r.n}" onchange="setRoomNum(${i},this.value)" style="width:92px;padding:6px 8px;border:1.5px solid var(--line);border-radius:6px;font-weight:700;font-family:var(--mono)"></td>
+      <td><select onchange="setRoomType(${i},this.value)" style="padding:6px 8px;border:1.5px solid var(--line);border-radius:6px">
+        ${ROOM_TYPES.map(k=>`<option value="${k}"${r.t===k?' selected':''}>${typeLabel(k)}</option>`).join('')}</select></td>
+      <td><input value="${r.f||''}" onchange="setRoomFloor(${i},this.value)" style="width:64px;padding:6px 8px;border:1.5px solid var(--line);border-radius:6px;text-align:center"></td>
+      <td style="font-size:12px;color:${busy?'var(--red-ink)':'var(--txt-3)'}">${busy?busy+' ta yashovchi':'bo\'sh'}</td>
+      <td><button class="btn btn-ghost" style="padding:5px 10px;font-size:12px;color:var(--red-ink);border-color:#f0c2c2" onclick="delRoom(${i})">✕</button></td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="5" style="color:var(--txt-3);padding:12px">Xona yo'q — pastdan qo'shing</td></tr>`;
+
+  const roomsPanel=mgr?`
+    <div class="panel"><div class="panel-h"><h3>🏠 Xonalar (${rooms.length})</h3><span class="spacer"></span>
+      <span class="roleonly">Faqat menejer</span></div>
+      <div class="panel-b" style="padding:0">
+        <div style="max-height:420px;overflow:auto">
+          <table class="data"><thead><tr><th>Raqami</th><th>Turi</th><th>Qavat</th><th>Holati</th><th></th></tr></thead>
+          <tbody>${roomRows}</tbody></table>
+        </div>
+      </div>
+      <div class="panel-b" style="padding:14px 20px;border-top:1px solid var(--line)">
+        <div style="font-weight:600;font-size:13px;margin-bottom:10px">➕ Yangi xona qo'shish</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div class="field" style="margin:0;width:130px"><label>Raqami</label><input id="nrNum" placeholder="101"></div>
+          <div class="field" style="margin:0;width:170px"><label>Turi</label><select id="nrType">${ROOM_TYPES.map(k=>`<option value="${k}">${typeLabel(k)}</option>`).join('')}</select></div>
+          <div class="field" style="margin:0;width:90px"><label>Qavat</label><input id="nrFloor" placeholder="1"></div>
+          <button class="btn btn-primary" style="width:auto;padding:10px 20px" onclick="addRoom()">➕ Qo'shish</button>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:16px;padding-top:14px;border-top:1px dashed var(--line)">
+          <div class="field" style="margin:0;width:130px"><label>Ketma-ket: dan</label><input id="brFrom" placeholder="101"></div>
+          <div class="field" style="margin:0;width:130px"><label>gacha</label><input id="brTo" placeholder="120"></div>
+          <div class="field" style="margin:0;width:170px"><label>Turi</label><select id="brType">${ROOM_TYPES.map(k=>`<option value="${k}">${typeLabel(k)}</option>`).join('')}</select></div>
+          <div class="field" style="margin:0;width:90px"><label>Qavat</label><input id="brFloor" placeholder="1"></div>
+          <button class="btn btn-ghost" style="width:auto;padding:10px 20px" onclick="addRoomRange()">⇉ Ketma-ket qo'shish</button>
+        </div>
+        <div class="mini-hint" style="padding:10px 0 0">Raqamni o'zgartirsangiz — o'sha xonadagi bronlar ham yangi raqamga ko'chadi. Yashovchisi bor xonani o'chirib bo'lmaydi.</div>
+      </div>
+    </div>`:'';
 
   const typeRows=ROOM_TYPES.map(k=>`<tr><td><b>${typeLabel(k)}</b></td>
     <td><input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="${typeRates[k]}" onchange="setTypeRate('${k}',this.value)" style="width:140px;padding:6px 8px;border:1.5px solid var(--line);border-radius:6px"></td>
     <td style="color:var(--txt-3);font-size:12px">${rooms.filter(r=>r.t===k).length} ta xona</td></tr>`).join('');
 
   return `<div style="max-width:760px">
+    ${roomsPanel}
     <div class="panel"><div class="panel-h"><h3>${P("Ma'lumot va zaxira")}</h3><span class="roleonly">Server</span></div>
       <div class="panel-b" style="padding:16px 20px">
         <div class="arr-item"><div class="who"><b>☁️ Server (bulut baza)</b><span>Har o'zgarish <b>serverga</b> saqlanadi. Boshqa kompyuterdan kirsangiz ham, brauzer tozalansa ham — ma'lumot turadi. Bir necha admin bir vaqtda ishlay oladi.</span></div><span class="tag paid">Ulangan</span></div>
