@@ -708,7 +708,10 @@ async function removeStaff(id,email){
 }
 async function toggleHotel(){
   const on=sel.active===false;
-  if(!confirm(on?`"${sel.name}" yoqilsinmi?`:`"${sel.name}" o'chirilsinmi?\n\nXodimlari kira olmaydi. Ma'lumot saqlanadi.`)) return;
+  const msg = on
+    ? `"${sel.name}" yoqilsinmi?\n\nXodimlari qaytadan kira oladi.`
+    : `"${sel.name}" o'chirilsinmi?\n\n🔒 Xodimlari dasturga KIRA OLMAYDI — ekranda "foydalanish to'xtatilgan" deb chiqadi.\nHozir ishlab turganlar 5 daqiqa ichida chiqarib yuboriladi.\n\nMa'lumot butunlay saqlanadi, yoqsangiz hammasi joyida turadi.`;
+  if(!confirm(msg)) return;
   try{ await call('hotel-toggle',{id:sel.id,active:on});
     toast(on?'Yoqildi':"O'chirildi",'good'); await loadHotels(sel.id); }
   catch(e){ toast(e.message,'bad'); }
