@@ -502,33 +502,6 @@ table.data tr:hover td{background:var(--panel-2)}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script>
-let SB = null;
-let HOTEL_ID = 'default_hotel';
-
-// Supabase initialization
-function initSupabase() {
-  try {
-    const url = localStorage.getItem('SB_URL') || 'https://your-project.supabase.co';
-    const key = localStorage.getItem('SB_KEY') || 'your-anon-key';
-    
-    if(!url || !key || url.includes('your-project')) {
-      console.warn('⚠️ Supabase URL yoki KEY sozlanmagan. Cloud save ishlamaydi.');
-      return;
-    }
-    
-    SB = window.supabase.createClient(url, key);
-    console.log('✅ Supabase initialized');
-  } catch(e) {
-    console.error('❌ Supabase error:', e.message);
-  }
-}
-
-// Page yuklanganda init qilish
-document.addEventListener('DOMContentLoaded', initSupabase);
-</script>
-
 </head>
 <body>
 
@@ -4125,68 +4098,14 @@ function openInvoice(id){
 function printInvoice(){
   const html=document.getElementById('invPrint').innerHTML;
   const w=window.open('','_blank');
-  w.document.write('<html><head><title>Invoice</title><style>body{font-family:Inter,Arial,sans-serif;padding:30px;color:#1a2233}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;border-bottom:1px solid #ddd;font-size:13px}.k{font-size:11px;color:#888;text-transform:uppercase}.folio-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;margin:14px 0}.money{font-family:monospace}.paysummary{display:flex;justify-content:space-between;padding:3px 0}</style><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script>
-let SB = null;
-let HOTEL_ID = 'default_hotel';
-
-// Supabase initialization
-function initSupabase() {
-  try {
-    const url = localStorage.getItem('SB_URL') || 'https://your-project.supabase.co';
-    const key = localStorage.getItem('SB_KEY') || 'your-anon-key';
-    
-    if(!url || !key || url.includes('your-project')) {
-      console.warn('⚠️ Supabase URL yoki KEY sozlanmagan. Cloud save ishlamaydi.');
-      return;
-    }
-    
-    SB = window.supabase.createClient(url, key);
-    console.log('✅ Supabase initialized');
-  } catch(e) {
-    console.error('❌ Supabase error:', e.message);
-  }
-}
-
-// Page yuklanganda init qilish
-document.addEventListener('DOMContentLoaded', initSupabase);
-</script>
-
-</head><body>'+html+'</body></html>');
+  w.document.write('<html><head><title>Invoice</title><style>body{font-family:Inter,Arial,sans-serif;padding:30px;color:#1a2233}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;border-bottom:1px solid #ddd;font-size:13px}.k{font-size:11px;color:#888;text-transform:uppercase}.folio-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;margin:14px 0}.money{font-family:monospace}.paysummary{display:flex;justify-content:space-between;padding:3px 0}</style></head><body>'+html+'</body></html>');
   w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
 }
 /* umumiy chop etish — istalgan sahifani (hisobot, qarzdorlik, E-mehmon...) pechatga chiqaradi */
 function printPage(title){
   const html=document.getElementById('view').innerHTML;
   const w=window.open('','_blank');
-  w.document.write('<html><head><title>'+(title||'THEONEPMS')+'</title><style>body{font-family:Inter,Arial,sans-serif;padding:28px;color:#1a2233}h1{font-size:18px;margin:0 0 4px}.sub{color:#888;font-size:12px;margin-bottom:16px}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #e5e5e5;font-size:12px}th{background:#f5f6f8;font-weight:600}.money{font-family:monospace}.panel-h{display:flex;align-items:center;margin:14px 0 6px;font-weight:600}.pill,.btn,input,.spacer,button{display:none!important}.stat{display:inline-block;border:1px solid #e5e5e5;border-radius:8px;padding:10px 16px;margin:4px}.hint,.mini-hint{background:#f5f6f8;padding:8px 12px;border-radius:6px;font-size:12px;color:#555;margin:8px 0}.wk-chart{display:none}</style><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script>
-let SB = null;
-let HOTEL_ID = 'default_hotel';
-
-// Supabase initialization
-function initSupabase() {
-  try {
-    const url = localStorage.getItem('SB_URL') || 'https://your-project.supabase.co';
-    const key = localStorage.getItem('SB_KEY') || 'your-anon-key';
-    
-    if(!url || !key || url.includes('your-project')) {
-      console.warn('⚠️ Supabase URL yoki KEY sozlanmagan. Cloud save ishlamaydi.');
-      return;
-    }
-    
-    SB = window.supabase.createClient(url, key);
-    console.log('✅ Supabase initialized');
-  } catch(e) {
-    console.error('❌ Supabase error:', e.message);
-  }
-}
-
-// Page yuklanganda init qilish
-document.addEventListener('DOMContentLoaded', initSupabase);
-</script>
-
-</head><body>'+
+  w.document.write('<html><head><title>'+(title||'THEONEPMS')+'</title><style>body{font-family:Inter,Arial,sans-serif;padding:28px;color:#1a2233}h1{font-size:18px;margin:0 0 4px}.sub{color:#888;font-size:12px;margin-bottom:16px}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #e5e5e5;font-size:12px}th{background:#f5f6f8;font-weight:600}.money{font-family:monospace}.panel-h{display:flex;align-items:center;margin:14px 0 6px;font-weight:600}.pill,.btn,input,.spacer,button{display:none!important}.stat{display:inline-block;border:1px solid #e5e5e5;border-radius:8px;padding:10px 16px;margin:4px}.hint,.mini-hint{background:#f5f6f8;padding:8px 12px;border-radius:6px;font-size:12px;color:#555;margin:8px 0}.wk-chart{display:none}</style></head><body>'+
     '<h1>THEONEPMS — '+(title||'Hisobot')+'</h1><div class="sub">'+hotelCfg.name+' · '+fmt(base)+' · '+uzTime()+'</div>'+html+'</body></html>');
   w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
 }
@@ -4212,34 +4131,7 @@ function exportPageExcel(){
     body+='</table><br>';
   });
   const head=`<h2 style="font-family:Arial">THEONEPMS — ${t(page)}</h2><div style="font-family:Arial;color:#666;font-size:12px">${hotelCfg.name} · ${fmt(base)} · ${uzTime()}</div><br>`;
-  const html='<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script>
-let SB = null;
-let HOTEL_ID = 'default_hotel';
-
-// Supabase initialization
-function initSupabase() {
-  try {
-    const url = localStorage.getItem('SB_URL') || 'https://your-project.supabase.co';
-    const key = localStorage.getItem('SB_KEY') || 'your-anon-key';
-    
-    if(!url || !key || url.includes('your-project')) {
-      console.warn('⚠️ Supabase URL yoki KEY sozlanmagan. Cloud save ishlamaydi.');
-      return;
-    }
-    
-    SB = window.supabase.createClient(url, key);
-    console.log('✅ Supabase initialized');
-  } catch(e) {
-    console.error('❌ Supabase error:', e.message);
-  }
-}
-
-// Page yuklanganda init qilish
-document.addEventListener('DOMContentLoaded', initSupabase);
-</script>
-
-</head><body>'+head+body+'</body></html>';
+  const html='<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>'+head+body+'</body></html>';
   const blob=new Blob(['\ufeff'+html],{type:'application/vnd.ms-excel'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
