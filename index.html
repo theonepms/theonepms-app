@@ -728,6 +728,29 @@ function pickRole(el){
   document.querySelectorAll('.rolebtn').forEach(b=>b.classList.remove('on'));
   el.classList.add('on'); selRole=el.dataset.role;
 }
+/* 🔒 Obuna to'xtatilgan — dastur ochilmaydi */
+function showBlocked(hotelName){
+  const old=document.getElementById('blockedOv'); if(old) old.remove();
+  const d=document.createElement('div');
+  d.id='blockedOv';
+  d.style.cssText='position:fixed;inset:0;z-index:9999;background:#0d0f14;display:flex;align-items:center;justify-content:center;padding:24px';
+  d.innerHTML=`
+    <div style="max-width:460px;width:100%;background:#161a22;border:1px solid #2a3040;border-radius:16px;padding:34px 30px;text-align:center;font-family:system-ui,-apple-system,'Segoe UI',sans-serif">
+      <div style="font-size:46px;line-height:1;margin-bottom:18px">🔒</div>
+      <div style="font-size:19px;font-weight:700;color:#e8ecf4;margin-bottom:8px">Dasturdan foydalanish to‘xtatilgan</div>
+      ${hotelName?`<div style="font-size:14px;color:#8b94a8;margin-bottom:16px">${hotelName}</div>`:''}
+      <div style="font-size:14px;color:#a8b0c2;line-height:1.65;margin-bottom:24px">
+        Mehmonxonangiz uchun dastur vaqtincha o‘chirib qo‘yilgan.<br>
+        Qayta yoqish uchun dastur operatori bilan bog‘laning.
+      </div>
+      <div style="background:#0d0f14;border:1px solid #2a3040;border-radius:10px;padding:14px;font-size:13px;color:#8b94a8;margin-bottom:22px">
+        Ma’lumotlaringiz saqlanib turibdi — hech narsa yo‘qolmagan.
+      </div>
+      <button onclick="location.reload()" style="background:#c8a45c;color:#0d0f14;border:0;border-radius:10px;padding:11px 26px;font-size:14px;font-weight:600;cursor:pointer">Qaytadan urinish</button>
+    </div>`;
+  document.body.appendChild(d);
+}
+
 function loginErr(msg){
   const e=document.getElementById('loginErr');
   if(!e)return;
@@ -758,13 +781,14 @@ async function fetchMembership(userId){
     }
     // 2) Oddiy foydalanuvchi — qaysi mehmonxonada, qanaqa rolda
     const {data,error}=await SB.from('hotel_users')
-      .select('hotel_id, role, hotels(name,rooms,start_date)').eq('user_id',userId).limit(1).maybeSingle();
+      .select('hotel_id, role, hotels(name,rooms,start_date,active)').eq('user_id',userId).limit(1).maybeSingle();
     if(error) return {ok:false};                       // baza javob bermadi → zaxira usul
     if(!data)  return {ok:true, found:false};          // baza javob berdi, lekin biriktirilmagan
     return {ok:true, found:true, super:false, hotel:data.hotel_id, role:data.role,
             name:(data.hotels&&data.hotels.name)||data.hotel_id,
             roomCount:(data.hotels&&data.hotels.rooms)||0,
-            startDate:(data.hotels&&data.hotels.start_date)||null};
+            startDate:(data.hotels&&data.hotels.start_date)||null,
+            active:(data.hotels? data.hotels.active!==false : true)};
   }catch(e){ return {ok:false}; }
 }
 async function loginNext(){
@@ -786,6 +810,14 @@ async function loginNext(){
     // ✅ ROL VA MEHMONXONA — BAZADAN olinadi (hotel_users). Email nomiga bog'liq emas.
     const mem=await fetchMembership(data.user.id);
     let realRole;
+    // 🔒 OBUNA NAZORATI — mehmonxona o'chirilgan bo'lsa, xodimlar kira olmaydi.
+    // Super-admin (dastur operatori) bunga bo'ysunmaydi — u har doim kira oladi.
+    if(mem.ok && mem.found && !mem.super && mem.active===false){
+      await SB.auth.signOut(); pendingUser=null;
+      btn.disabled=false; btn.textContent='Kirish';
+      showBlocked(mem.name||'');
+      return;
+    }
     if(mem.ok && mem.found){
       realRole=mem.role;
       isSuper=!!mem.super;
@@ -6123,9 +6155,22 @@ function saveState(){
 }
 
 /* --- Boshqa admin o'zgartirsa — 30 soniyada bir tekshiradi (o'zimizniki hisobga olinmaydi) --- */
+let subTick=0;   // obunani har 10-aylanishda (~5 daqiqa) tekshiramiz
 function startCloudSync(){
   clearInterval(syncTimer);
   syncTimer=setInterval(async()=>{
+    // 🔒 Obuna nazorati — ish paytida o'chirilsa ham chiqarib yuboradi
+    if(SB && !isSuper && (++subTick % 10 === 0)){
+      try{
+        const {data:h}=await SB.from('hotels').select('active,name').eq('id',HOTEL_ID).maybeSingle();
+        if(h && h.active===false){
+          clearInterval(syncTimer);
+          try{ await SB.auth.signOut(); }catch(e){}
+          showBlocked(h.name||'');
+          return;
+        }
+      }catch(e){}
+    }
     // modal ochiq / saqlash kutilmoqda / band bo'lsa — tegmaymiz
     if(!SB||cloudBusy||savePending||document.getElementById('regOverlay')||document.getElementById('folioOverlay')||document.getElementById('actOverlay')) return;
     try{
