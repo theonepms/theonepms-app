@@ -149,55 +149,6 @@ tr:last-child td{border-bottom:none}
 <div id="toast"></div>
 
 <script>
-
-// Supabase RPC chaqiruvi wrapper
-async function call(method, params = {}) {
-  if (!SB) {
-    throw new Error('Supabase ulanmagan');
-  }
-  
-  try {
-    console.log(`📤 RPC: ${method}`, params);
-    const { data, error } = await SB.rpc(method, params);
-    
-    if (error) {
-      throw new Error(error.message || 'RPC error');
-    }
-    
-    console.log(`✅ RPC OK: ${method}`);
-    return data;
-  } catch(e) {
-    console.error(`❌ Call error [${method}]:`, e);
-    throw e;
-  }
-}
-
-// Supabase initialization
-let SB = null;
-function initSupabase() {
-  try {
-    const url = localStorage.getItem('SB_URL') || 'https://your-project.supabase.co';
-    const key = localStorage.getItem('SB_KEY') || 'your-anon-key';
-    
-    if(!url || !key) {
-      console.warn('Supabase sozlamalar yo'q');
-      return;
-    }
-    
-    SB = window.supabase.createClient(url, key);
-    console.log('✅ Panel SB ready');
-  } catch(e) {
-    console.error('SB init error:', e);
-  }
-}
-
-// Constants
-const IDLE_MIN = 15; // 15 daqiqa timeout
-
-// Initialize on load
-window.addEventListener('DOMContentLoaded', initSupabase);
-
-
 const SB_URL='https://bmycnlhryfwjihjxxshp.supabase.co';
 const SB_KEY='sb_publishable_FGaZYRcF0mewLes59vAJeQ_jvWAZxGP';
 const SB=window.supabase.createClient(SB_URL,SB_KEY,{
