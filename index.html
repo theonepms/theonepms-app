@@ -2783,6 +2783,7 @@ function confirmGroupCancel(){
     if(s.status==='book'){ logAction(s,'refund','Guruh atmen — bron o\'chirildi',0,groupCancelReason); removed++; }
     else { s.status='canceled'; s.canceledReason=groupCancelReason; logAction(s,'refund','Guruh atmen — bekor qilindi',0,groupCancelReason); marked++; }
   });
+  stays.forEach(s=>{ if(groupDelSel.has(s.id)&&s.status==='book') deletedLocally.add(s.id); });
   stays=stays.filter(s=>!(groupDelSel.has(s.id)&&s.status==='book'));
   document.getElementById('gcOverlay')?.remove();
   clearDelSel(); render();
@@ -2978,9 +2979,15 @@ function closeReg(){const o=document.getElementById('regOverlay');if(o)o.remove(
 function saveReg(status){
   const r=regState, g=r.guests[0];
   if(!g.firstName||!g.lastName){toast('Asosiy mehmon ism-familiyasini kiriting.',false);return;}
+  // 🛡 BANDLIK TEKSHIRUVI — hamma tanlangan xona, to'liq muddat bo'yicha
   {
-    const _bd=typeof blockConflict==='function'?blockConflict(r.room,r.date,new Date(stripTime(r.date).getTime()+Math.max(1,r.nights)*DAY)):null;
-    if(_bd){ toast(`Xona ${r.room} bu kunlarda YOPIQ (${_bd.reason}). Boshqa xona tanlang.`,false); return; }
+    const nN=Math.max(1,r.nights||1);
+    const outD=r.dayUse ? new Date(stripTime(r.inDate).getTime()+DAY)   // kunduzgi ham 1 kunni egallaydi
+                        : new Date(stripTime(r.inDate).getTime()+nN*DAY);
+    for(const room of r.rooms){
+      const c=findClash(room, r.inDate, outD, null);
+      if(c){ toast(clashMsg(c, room), false); return; }
+    }
   }
   if(r.nightly===''||r.nightly===null||r.nightly===undefined||isNaN(+r.nightly)){toast('1 kunlik xona narxini kiriting (bepul bo\'lsa 0 yozing).',false);return;}
   if(+r.nightly<0){toast('Narx manfiy bo\'lishi mumkin emas.',false);return;}
@@ -3307,7 +3314,45 @@ function roomBusyFor(s,asStatus){
   const A=stripTime(s.inDate).getTime();
   const B=stripTime(s.checkoutDate||s.outDate).getTime();
   return stays.find(x=>x.id!==s.id && x.room===s.room && (x.status==='in'||x.status==='book') &&
-    stripTime(x.inDate).getTime() <= B && stripTime(x.outDate).getTime() >= A) || null;
+    stripTime(x.inDate).getTime() < B && stripTime(x.outDate).getTime() > A) || null;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   🛡 MARKAZIY BANDLIK TEKSHIRUVI
+   Xona [inD, outD) oralig'ida bo'shmi? Bandligicha bo'lsa —
+   kim bandligini qaytaradi. Har joyda shu ishlatiladi:
+   ro'yxatga olish, cho'zish, ko'chirish, sana surish, tiklash.
+   Chegara: chiqish kuni = kelish kuni bo'lsa TO'QNASHUV EMAS
+   (biri chiqadi, biri kiradi — normal).
+   ═══════════════════════════════════════════════════════════ */
+function findClash(room, inD, outD, ignoreId){
+  const A=stripTime(inD).getTime();
+  const B=stripTime(outD).getTime();
+  if(!(A<B)) return null;                       // noto'g'ri sana
+  // 1) boshqa bron/yashovchi bilan to'qnashuv
+  const clash=stays.find(x=> x.id!==ignoreId && x.room===room
+    && (x.status==='in'||x.status==='book')
+    && stripTime(x.inDate).getTime() < B
+    && stripTime(x.outDate).getTime() > A);
+  if(clash) return {type:'stay', who:`${clash.firstName} ${clash.lastName}`,
+                    from:clash.inDate, to:clash.outDate};
+  // 2) yopilgan (ta'mir) xona bilan to'qnashuv
+  if(typeof roomBlocks!=='undefined' && Array.isArray(roomBlocks)){
+    const bd=roomBlocks.find(bk=>{
+      if(bk.room!==room) return null;
+      const f=new Date(bk.from+'T00:00:00').getTime();
+      const t=new Date(bk.to+'T00:00:00').getTime()+DAY;   // 'to' kuni ham yopiq
+      return f<B && t>A;
+    });
+    if(bd) return {type:'block', reason:bd.reason||'ta\u2019mir'};
+  }
+  return null;
+}
+/* Xabarni tayyor qilib beradi */
+function clashMsg(c, room){
+  if(!c) return '';
+  if(c.type==='block') return `Xona ${room} bu kunlarda YOPIQ (${c.reason}). Boshqa xona tanlang.`;
+  return `Xona ${room} band: ${c.who} (${fmtShort(c.from)}–${fmtShort(c.to)}). Boshqa xona yoki sana tanlang.`;
 }
 function doUncancel(id){
   if(role!=='manager'){ denyMgr('Bekor qilishni qaytarish'); return; }
@@ -3731,11 +3776,12 @@ function drawActionModal(){
         ? `<div class="mini-hint" style="padding:0 0 10px">Mehmon <b>kelmagan</b> (check-in bo'lmagan) — bron shaxmatkadan <b>butunlay o'chadi</b>. Jurnalga yoziladi.</div>`
         : `<div class="mini-hint" style="padding:0 0 10px">⚠ Mehmon <b>check-in qilingan</b> — bron shaxmatkada <b>binafsha</b> bo'lib <b>qoladi</b> (iz o'chmaydi). Menejer jurnaliga yoziladi.</div>`);
   } else if(a.kind==='uncancel'){
-    const conf=roomBusyFor(s,'in');
+    const conf=findClash(s.room, s.inDate, s.checkoutDate||s.outDate, s.id);
+    if(conf) conf.firstName=conf.who?conf.who.split(' ')[0]:'', conf.lastName=conf.who?(conf.who.split(' ').slice(1).join(' ')):'';
     bodyHtml = conf
       ? `<div style="background:var(--red-bg);border:1px solid var(--red);border-radius:10px;padding:12px 14px">
           <div style="font-weight:700;color:var(--red-ink)">⛔ Xona band</div>
-          <div style="font-size:12.5px;color:var(--txt-2);margin-top:4px">Xona ${s.room} da hozir <b>${conf.firstName} ${conf.lastName}</b> (${fmt(conf.inDate)}–${fmt(conf.outDate)}). Avval uni hal qiling.</div>
+          <div style="font-size:12.5px;color:var(--txt-2);margin-top:4px">${conf.type==='block'?`Xona ${s.room} YOPIQ (${conf.reason}).`:`Xona ${s.room} da hozir <b>${conf.who}</b> (${fmt(conf.from)}–${fmt(conf.to)}).`} Avval uni hal qiling.</div>
         </div>`
       : `<div class="mini-hint" style="padding:0 0 10px">Bron <b>«Yashamoqda»</b> holatiga qaytariladi: ${fmt(s.inDate)} – ${fmt(s.outDate)} · Xona ${s.room}. Bu amal nazoratga yoziladi.</div>`;
   } else if(a.kind==='extend'){
@@ -3911,6 +3957,7 @@ function commitAction(){
     if(s.status==='book'){
       // Mehmon KELMAGAN — hech kim yashamagan, pul bo'lishi mumkin emas → izsiz o'chadi
       logAction(s,'refund','Bron o\'chirildi (mehmon kelmagan — check-in bo\'lmagan)',0,a.reason);
+      deletedLocally.add(s.id);
       stays=stays.filter(x=>x.id!==s.id);
       toast('Bron o\'chirildi — mehmon kelmagan edi',true);
     } else {
@@ -3923,9 +3970,9 @@ function commitAction(){
   } else if(a.kind==='uncancel'){
     /* ♻ BEKOR QILISHNI QAYTARISH — faqat menejer */
     if(role!=='manager'){ denyMgr('Bekor qilishni qaytarish'); return; }
-    const conf=roomBusyFor(s,'in');
+    const conf=findClash(s.room, s.inDate, s.checkoutDate||s.outDate, s.id);
     if(conf){
-      toast(`Xona ${s.room} band: ${conf.firstName} ${conf.lastName}. Avval uni hal qiling.`,false); return;
+      toast(clashMsg(conf, s.room),false); return;
     }
     s.status='in'; s.canceledReason=''; s.canceledAt=null; s.canceledBy=null;
     logAction(s,'warn','♻ BEKOR QILISH QAYTARILDI — bron yashamoqda holatiga tiklandi',0,a.reason);
@@ -3936,6 +3983,10 @@ function commitAction(){
     const nn=Math.max(1,+a.newNights); const oldn=nights(s);
     if(nn===oldn){closeAction();return;}
     if(nn>oldn){
+      // 🛡 CHO'ZISHDA BANDLIK TEKSHIRUVI — yangi chiqish sanasigacha boshqa mehmon bormi?
+      const newOut=new Date(stripTime(s.inDate).getTime()+nn*DAY);
+      const c=findClash(s.room, s.inDate, newOut, s.id);
+      if(c){ toast(clashMsg(c, s.room), false); return; }
       // ⛔ Yangi kunlarga qo'yiladigan narx — 0 bo'lmasin (aks holda qarz ko'rinmay qoladi)
       let rate=+s.nightly || +s.rates[oldn-1] || 0;
       if(!rate){
@@ -3959,9 +4010,8 @@ function commitAction(){
     if(nd.getTime()<base.getTime()){toast('O\'tgan sanaga ko\'chirib bo\'lmaydi.',false);return;}
     const n=nights(s), old=fmt(s.inDate);
     // yangi sanada xona bo'shligini tekshirish
-    const clash=stays.some(x=>x.id!==s.id && x.room===s.room && x.status!=='canceled' && x.status!=='out'
-      && stripTime(x.inDate)<new Date(nd.getTime()+n*DAY) && stripTime(x.outDate)>nd);
-    if(clash){toast('Bu xona yangi sanalarda band. Avval boshqa xona tanlang.',false);return;}
+    const _c=findClash(s.room, nd, new Date(nd.getTime()+n*DAY), s.id);
+    if(_c){toast(clashMsg(_c, s.room),false);return;}
     s.inDate=nd; s.outDate=new Date(nd.getTime()+n*DAY);
     logAction(s,'move',`Kelish sanasi ko'chirildi: ${old} → ${fmt(nd)} (mehmon kelmagan)`,0);
     toast(`Bron ${fmt(nd)} ga ko'chirildi ✓`,true);
@@ -4034,8 +4084,7 @@ function commitCheckout(id,tm){
 function doMoveRoom(id){
   const s=stays.find(x=>x.id===id);
   if(!can('moveRoom',s)){ toast('Bu bron joriy kunga tegishli emas — xonani faqat menejer ko\'chiradi.',false); return; }
-  const free=rooms.filter(r=>r.n!==s.room && !stays.some(x=>x.id!==id && x.status!=='out' && x.room===r.n
-      && stripTime(x.inDate)<stripTime(s.outDate) && stripTime(x.outDate)>stripTime(s.inDate)));
+  const free=rooms.filter(r=>r.n!==s.room && !findClash(r.n, s.inDate, s.checkoutDate||s.outDate, id));
   if(!free.length){ toast("Bu sanalarda bo'sh xona yo'q.",false); return; }
   const opts=free.map(r=>`<div class="arr-item" onclick="confirmMoveRoom('${id}','${r.n}')">
     <div class="rm">${r.n}</div><div class="who"><b>${typeLabel(r.t)}</b><span>Bo'sh · ${fmtShort(s.inDate)}–${fmtShort(s.outDate)}</span></div>
@@ -5123,28 +5172,6 @@ function renderDashboard(){
   </div>`;
 }
 
-/* ================= KUNLIK HISOBOT ================= */
-function renderKunlik(){
-  const m=metrics();
-  const today=stays.filter(s=> stripTime(s.inDate)<=base && stripTime(s.outDate)>=base && (s.status==='in'||s.status==='out'));
-  const rows=today.map(s=>{const bal=balance(s);
-    return `<tr onclick="openFolio('${s.id}')" style="cursor:pointer">
-      <td><b class="mono">${s.room}</b></td><td>${s.firstName} ${s.lastName}</td>
-      <td class="money">${money(s.price)}</td>
-      <td class="money" style="color:var(--green-ink)">${money(paidSum(s))}</td>
-      <td class="money" style="color:${bal>0?'var(--red-ink)':'var(--green-ink)'}">${bal>0?money(bal):'✓'}</td>
-      <td>${s.status==='out'?'<span class="tag out">Chiqqan</span>':'<span class="tag in">'+P('Yashamoqda')+'</span>'}</td></tr>`;}).join('')
-    ||'<tr><td colspan=6 style="text-align:center;color:var(--txt-3)">Bugun mehmon yo\'q</td></tr>';
-  return `<div class="stats">
-    <div class="stat accent a-green"><div class="l">${t('bugtushum')}</div><div class="v money-v">${somNum(m.paid)}<small> so'm</small></div>
-      <div class="subrow"><span class="chip cash">Naxt ${money(m.cash)}</span></div><div class="subrow"><span class="chip card">Karta ${money(m.card)}</span></div></div>
-    <div class="stat accent a-red"><div class="l">${t('vozvratlar')}</div><div class="v money-v" style="color:var(--red-ink)">${somNum(m.refunds)}<small> so'm</small></div></div>
-    <div class="stat accent a-blue"><div class="l">Bandlik</div><div class="v">${m.occ}<small>/${rooms.length}</small></div><div class="d">${m.pct}%</div></div>
-    <div class="stat accent a-amber"><div class="l">Kelish / chiqish</div><div class="v">${m.arrivals.length}<small> / ${m.departures.length}</small></div></div>
-  </div>
-  <div class="panel"><div class="panel-h"><h3>Kunlik yozuv — ${fmt(base)}</h3><span class="spacer"></span><span class="pill">${today.length} ta mehmon</span></div>
-    <table class="data"><thead><tr><th>${P("Xona")}</th><th>${P("Mehmon")}</th><th>${P("Narx")}</th><th>${P("To'langan")}</th><th>${P("Qarz")}</th><th>${P("Holat")}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-}
 
 /* ================= KASSA VA HISOBOT (kunlik + kassa birga, davr tanlash bilan) ================= */
 let payFilter='all';
@@ -6113,7 +6140,14 @@ async function cloudSave(){
     const {data:srvIds}=await SB.from('stays').select('id').eq('hotel_id',HOTEL_ID);
     const localIds=new Set(stays.map(s=>s.id));
     const gone=(srvIds||[]).map(r=>r.id).filter(id=>!localIds.has(id));
-    if(gone.length) await SB.from('stays').delete().in('id',gone);
+    // 🛡 XAVFSIZ O'CHIRISH: faqat BIZ ochgan seansdan beri BIZ o'chirganlarni o'chiramiz.
+    // Boshqa xodim yangi bron qo'shgan bo'lsa (bizda hali yo'q) — uni O'CHIRMAYMIZ.
+    const reallyGone=gone.filter(id=>deletedLocally.has(id));
+    if(reallyGone.length){
+      await SB.from('stays').delete().in('id',reallyGone);
+      reallyGone.forEach(id=>deletedLocally.delete(id));
+    }
+    // boshqa xodim qo'shgan, bizda yo'q bronlar bo'lsa — keyingi sinxronda o'zi keladi
     // 2) sozlamalar
     const conf={ savedAt:Date.now(), base:base.getTime(), ganttStart:ganttStart.getTime(),
       rooms, typeRates, hotelCfg, companies, companyData, statChannels, channels,
@@ -6138,6 +6172,7 @@ async function cloudLogPush(entry){
 
 /* --- saveState(): faqat MA'LUMOT O'ZGARGANDA bulutga yozadi --- */
 let lastFingerprint='';
+const deletedLocally=new Set();   // 🛡 shu seansda BIZ o'chirgan bron id'lari (xavfsiz o'chirish uchun)
 function dataFingerprint(){
   try{
     return stays.length+'|'+stays.map(s=>s.id+':'+s.status+':'+s.room+':'+s.price+':'+(s.payments||[]).length+':'+(s.charges||[]).length+':'+s.outDate.getTime()+':'+s.inDate.getTime()).join(',')
