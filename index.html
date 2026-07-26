@@ -3948,24 +3948,28 @@ function commitAction(){
     logAction(s,'money',`Xizmat qo'shildi: ${a.name}`,amt);
     toast('Xizmat hisobga qo\'shildi ✓ (pul emas — qarzga qo\'shildi)',true);
   } else if(a.kind==='cancel'){
-    /* ⚠️ TO'LOV KIRITILGAN BO'LSA — hech kim bekor qila olmaydi (avval vozvrat) */
+    /* To'langan va qaytarilgan summani hisoblaymiz */
     const paid=(s.payments||[]).filter(p=>p.type==='pay').reduce((x,p)=>x+p.amount,0);
-    if(paid>0){
-      toast(`Bu bronga ${money(paid)} to'lov kiritilgan — bekor qilib bo'lmaydi. Avval menejer VOZVRAT qilsin.`,false);
+    const refunded=(s.payments||[]).filter(p=>p.type==='ref').reduce((x,p)=>x+p.amount,0);
+    const netPaid=paid-refunded;   // hali qaytarilmagan pul
+    /* Pul bor va HALI QAYTARILMAGAN bo'lsa - bekor qilib bo'lmaydi (avval vozvrat) */
+    if(netPaid>0){
+      toast(`Bu bronda ${money(netPaid)} qaytarilmagan to'lov bor - bekor qilib bo'lmaydi. Avval menejer VOZVRAT qilsin.`,false);
       return;
     }
-    if(s.status==='book'){
-      // Mehmon KELMAGAN — hech kim yashamagan, pul bo'lishi mumkin emas → izsiz o'chadi
-      logAction(s,'refund','Bron o\'chirildi (mehmon kelmagan — check-in bo\'lmagan)',0,a.reason);
-      deletedLocally.add(s.id);
-      stays=stays.filter(x=>x.id!==s.id);
-      toast('Bron o\'chirildi — mehmon kelmagan edi',true);
+    /* Bu yergacha yetdi = yo pul umuman yo'q, yo hammasi qaytarilgan.
+       Ikkala holatda ham shaxmatkada IZ QOLMAYDI - toza o'chadi.
+       Lekin admin nazorat jurnaliga HAMMASI to'liq yoziladi. */
+    if(paid>0){
+      logAction(s,'refund',`BRON BEKOR QILINDI - to'langan ${money(paid)} to'liq qaytarilgan edi, izsiz o'chirildi`,0,a.reason);
+    } else if(s.status==='book'){
+      logAction(s,'refund',"Bron o'chirildi (mehmon kelmagan - check-in bo'lmagan, pul yo'q)",0,a.reason);
     } else {
-      // Mehmon KIRGAN — iz qolishi SHART
-      s.status='canceled'; s.canceledReason=a.reason; s.canceledAt=fmtShort(base)+' '+uzTime(); s.canceledBy=role==='admin'?'Administrator':'Menejer';
-      logAction(s,'refund','BRON BEKOR QILINDI (check-in\'dan keyin) — shaxmatkada binafsha qoldi',0,a.reason);
-      toast('Bekor qilindi — shaxmatkada iz qoldi 🟣',true);
+      logAction(s,'refund',"Bron o'chirildi (check-in bo'lgan, lekin to'lov kiritilmagan)",0,a.reason);
     }
+    deletedLocally.add(s.id);
+    stays=stays.filter(x=>x.id!==s.id);
+    toast("Bron o'chirildi - shaxmatkada iz qolmadi ✓",true);
     closeAction(); closeFolio(); render(); return;
   } else if(a.kind==='uncancel'){
     /* ♻ BEKOR QILISHNI QAYTARISH — faqat menejer */
@@ -4661,6 +4665,35 @@ function pmsNameKey(s){
 function pmsNameKeyG(g){
   return normName((g.lastName||'')+' '+(g.firstName||''));
 }
+
+/* --- 🔑 SO'Z TO'PLAMI bo'yicha o'xshashlik (tartibga QARAMAYDI) ---
+   "SORIANO FERNANDEZ CEBALLOS JOSE" va "CEBALLOS JOSE SORIANO FERNANDEZ"
+   bir xil so'zlardan iborat → bir odam deb topadi.
+   Qisqa so'zlar (1-2 harf) e'tiborga olinmaydi (bosh harflar, "DE", "EL" kabi). */
+function nameTokens(x){
+  return normName(x).split(' ').filter(w=>w.length>=2);
+}
+function tokenMatch(a,b){
+  const A=nameTokens(a), B=nameTokens(b);
+  if(!A.length||!B.length) return 0;
+  const setB=new Set(B);
+  let hit=0;
+  for(const w of new Set(A)) if(setB.has(w)) hit++;
+  // nechta so'z mos keldi / kamroq tomonning so'z soni
+  const denom=Math.min(new Set(A).size, new Set(B).size);
+  let ratio=hit/denom;
+  // agar to'liq so'zlar mos kelmasa ham, har biri bir-biriga juda o'xshash bo'lsa (imlo xatosi) — hisobga olamiz
+  if(ratio<1){
+    let fuzzy=0;
+    for(const wa of new Set(A)){
+      let ok=false;
+      for(const wb of setB){ if(simRatio(wa,wb)>=0.85){ ok=true; break; } }
+      if(ok) fuzzy++;
+    }
+    ratio=Math.max(ratio, fuzzy/denom);
+  }
+  return ratio;
+}
 /* --- Excel sanasi: "11.07.2026 14:59" → {d:'2026-07-11', t:'14:59'} --- */
 function emParseDT(v){
   if(v==null||v==='') return {d:'',t:''};
@@ -4770,8 +4803,11 @@ function emCompare(rawAll){
     let best=null, bestScore=0;
     pmsPeople.forEach((p,i)=>{
       if(usedPms.has(i)) return;
-      // ism ikki tomonlama (Familiya Ism / Ism Familiya) tekshiriladi
-      const sc=Math.max(simRatio(ek,p.key), simRatio(ek,p.key.split(' ').reverse().join(' ')));
+      // 🔑 So'z to'plami bo'yicha (tartibga qaramaydi) — chet el ismlari uchun asosiy usul
+      const scTok=tokenMatch(e.name, p.disp);
+      // eski usul (harf-harf, ikki tomonlama) — zaxira
+      const scOld=Math.max(simRatio(ek,p.key), simRatio(ek,p.key.split(' ').reverse().join(' ')));
+      const sc=Math.max(scTok, scOld);
       if(sc>bestScore){ bestScore=sc; best={i,p}; }
     });
     if(best && bestScore>=0.85){
