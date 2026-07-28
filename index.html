@@ -4535,7 +4535,7 @@ function renderShubha(){
   const md=openList.filter(x=>x.lvl==='mid').length;
   const done=all.length-openList.length;
 
-  const rows=shown.map(x=>{
+  const rows=[...shown].reverse().map(x=>{
     const a=x.a, ack=ackedShubha[x.key];
     const col=x.lvl==='high'?'var(--red)':'var(--amber)';
     const bg =x.lvl==='high'?'var(--red-bg)':'var(--amber-bg)';
@@ -4590,8 +4590,8 @@ function renderNazorat(){
   const days=[...new Set(auditLog.map(a=>a.day||ymd(base)))].sort().reverse();
 
   // ko'rsatiladigan yozuvlar: HAMMASI yoki tanlangan kun
-  const shownLog = showAll ? auditLog.slice() : auditLog.filter(a=>(a.day||ymd(base))===nazDate);
-  // auditLog unshift bilan yig'iladi -> [0] eng yangi. YANGI TEPADA bo'lishi uchun shundayligicha qoldiramiz.
+  const shownLog = (showAll ? auditLog.slice() : auditLog.filter(a=>(a.day||ymd(base))===nazDate)).reverse();
+  // auditLog unshift bilan yig'iladi -> [0] eng yangi. ESKI TEPADA, YANGI PASTDA bo'lishi uchun teskari qilamiz.
 
   const dateBar=`<div class="panel" style="margin-bottom:14px"><div style="display:flex;align-items:center;gap:10px;padding:12px 16px;flex-wrap:wrap">
     <button class="btn ${showAll?'btn-primary':'btn-ghost'}" style="padding:8px 16px;font-size:13px" onclick="nazAll()">📋 Hammasi</button>
@@ -4604,7 +4604,7 @@ function renderNazorat(){
 
   if(!shownLog.length){
     return `<div class="hint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
-      Bu yerda administrator va menejer qilgan har bir o'zgarish — <b>sana va soati bilan</b>, eng yangisi tepada, ketma-ket yoziladi. O'chirib bo'lmaydi.</div>
+      Bu yerda administrator va menejer qilgan har bir o'zgarish — <b>sana va soati bilan</b>, eng eskisi tepada, yangisi pastda ketma-ket yoziladi. O'chirib bo'lmaydi.</div>
     ${dateBar}
     <div class="panel"><div class="empty-state">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V6z"/></svg>
