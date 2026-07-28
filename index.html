@@ -2431,19 +2431,15 @@ function laneFor(room){
     duLanes=Math.max(duLanes,Math.ceil(arr.length/MAXPERLANE));
   });
 
-  /* 2) ODDIY BRONLAR — faqat VAQTI to'qnashsa yangi qavat (variant B).
-     ⚠️ "Kunduzgi bor kunga tekkanda majburan pastga tushir" qoidasi OLIB TASHLANDI —
-        to'qnashmasa bron kunduzgilar bilan bir qatorda, yonida qoladi. */
+  /* 2) ODDIY BRONLAR — HAR DOIM BITTA QATORDA (pastga tushmaydi).
+     To'qnashsa ham yangi qavat OCHILMAYDI — 3-bosqichda yonma-yon joy bo'linadi,
+     o'rtada kichik bo'shliq qoladi. Bir chiziqda, tekis turadi. */
   const laneEnds=[];
   active.filter(s=>!isDayUseOut(s)).forEach(s=>{
-    const st=stayStartMs(s), en=Math.max(stayEndMs(s), st+30*60000);
-    let placed=false;
-    for(let i=0;i<laneEnds.length;i++){
-      if(st>=(laneEnds[i]||0)-1000){ s._lane=i; laneEnds[i]=en; placed=true; break; }
-    }
-    if(!placed){ s._lane=laneEnds.length; laneEnds.push(en); }
+    s._lane=0;                    // ⬅️ hammasi bitta qatorda
+    laneEnds[0]=0;
   });
-  const usedLanes=Math.max(duLanes, laneEnds.length);
+  const usedLanes=Math.max(duLanes, laneEnds.length?1:0);
   canceled.forEach(s=>{ s._lane=usedLanes; });
   return {list:active.concat(canceled),lanes:Math.max(1,usedLanes+(canceled.length?1:0))};
 }
@@ -2574,8 +2570,14 @@ function renderGanttRows(){
         while(j+1<arr.length && arr[j+1].L < maxR-0.001){ j++; maxR=Math.max(maxR,arr[j].R); }
         const cnt=j-i+1;
         if(cnt>1){
-          const minL=arr[i].L, w=(maxR-minL)/cnt;
-          for(let q=0;q<cnt;q++){ arr[i+q].L=minL+q*w; arr[i+q].R=minL+(q+1)*w; }
+          // yonma-yon bo'linadi, o'rtada kichik bo'shliq ("nafas") qoladi
+          const GAP=0.08;                          // bronlar orasidagi bo'shliq (kun ulushida)
+          const minL=arr[i].L, total=maxR-minL;
+          const w=(total-GAP*(cnt-1))/cnt;         // bo'shliqni chegirib, qolganini teng bo'lamiz
+          for(let q=0;q<cnt;q++){
+            arr[i+q].L=minL+q*(w+GAP);
+            arr[i+q].R=arr[i+q].L+w;
+          }
         }
         i=j+1;
       }
@@ -3116,7 +3118,7 @@ function openFolio(id,keepEdit){
     <div class="grid2">
       ${s.status==='in'
         ? `<div class="field"><label>Kelish sanasi va vaqti 🔒</label><input value="${fmt(s.inDate)} · ${s.arrTime}" disabled style="background:var(--panel-2);color:var(--txt-2);cursor:not-allowed"></div>`
-        : `<div class="field"><label>Bron sanasi (kirish kuni) — o'zgartiring, darrov ko'chadi</label><input type="date" value="${ymd(s.inDate)}" onchange="moveBookingDate('${id}',this.value)"></div>`}
+        : `<div class="field"><label>Bron sanasi (kirish kuni) — o'zgartiring, darrov ko'chadi</label><input type="date" value="${ymd(s.inDate)}" oninput="folioEdit.inDate=this.value" onchange="folioAutoSave('${id}')"></div>`}
       <div class="field"><label>Premichaniye (izoh)</label><input value="${folioEdit.premicha}" oninput="folioEdit.premicha=this.value" onchange="folioAutoSave('${id}')"></div>
     </div>
     ${s.status==='book'?`<div class="mini-hint" style="padding:0 0 8px">Bron sanasini o'zgartirsangiz, xona shu yangi kunga ${nights(s)} tunga ko'chadi. Chiqish avtomatik hisoblanadi.</div>`:''}
@@ -3261,7 +3263,8 @@ function logAction(s,type,text,amount,reason){
   buildNav();
 }
 function doCheckin(id){
-  const s=stays.find(x=>x.id===id); s.status='in';
+  const s=stays.find(x=>x.id===id); if(!s)return;
+  s.status='in';
   closeFolio(); render(); toast('Check-in bajarildi ✓',true);
 }
 /* ================= ADMIN HUQUQLARI (markaziy nazorat) =================
