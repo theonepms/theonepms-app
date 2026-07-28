@@ -767,7 +767,7 @@ function roleOfEmail(email){
 }
 /* ✅ ASOSIY usul — kim qaysi mehmonxonada va qanaqa rolda ekani BAZADAN olinadi.
    Endi rol email nomiga bog'liq emas — hotel_users jadvali hal qiladi. */
-let myHotel=null, myHotelName='', myHotelRooms=0, myHotelStart=null, verifiedRole=null, isSuper=false, allHotels=[];
+let myHotel=null, myHotelName='', myHotelRooms=0, myHotelStart=null, myHotelNextDue=null, verifiedRole=null, isSuper=false, allHotels=[];
 async function fetchMembership(userId){
   try{
     // 1) SUPER-ADMIN mi? (hamma mehmonxonani ko'radi)
@@ -781,14 +781,15 @@ async function fetchMembership(userId){
     }
     // 2) Oddiy foydalanuvchi — qaysi mehmonxonada, qanaqa rolda
     const {data,error}=await SB.from('hotel_users')
-      .select('hotel_id, role, hotels(name,rooms,start_date,active)').eq('user_id',userId).limit(1).maybeSingle();
+      .select('hotel_id, role, hotels(name,rooms,start_date,active,next_due)').eq('user_id',userId).limit(1).maybeSingle();
     if(error) return {ok:false};                       // baza javob bermadi → zaxira usul
     if(!data)  return {ok:true, found:false};          // baza javob berdi, lekin biriktirilmagan
     return {ok:true, found:true, super:false, hotel:data.hotel_id, role:data.role,
             name:(data.hotels&&data.hotels.name)||data.hotel_id,
             roomCount:(data.hotels&&data.hotels.rooms)||0,
             startDate:(data.hotels&&data.hotels.start_date)||null,
-            active:(data.hotels? data.hotels.active!==false : true)};
+            active:(data.hotels? data.hotels.active!==false : true),
+            nextDue:(data.hotels&&data.hotels.next_due)||null};
   }catch(e){ return {ok:false}; }
 }
 async function loginNext(){
@@ -823,6 +824,7 @@ async function loginNext(){
       isSuper=!!mem.super;
       myHotel=mem.hotel; myHotelName=mem.name; myHotelRooms=mem.roomCount||0;
       myHotelStart=mem.startDate||null;
+      myHotelNextDue=mem.nextDue||null;
       if(isSuper){ const _h=allHotels.find(x=>x.id===mem.hotel); if(_h) myHotelStart=_h.start_date||null; }
       HOTEL_ID=mem.hotel;                 // dastur endi shu mehmonxona ma'lumotini oladi
     } else if(mem.ok && !mem.found){
@@ -1021,6 +1023,7 @@ function enterApp(r){
   applyLang(document.body);
   startClock();
   tryAutoRate();
+  showPayReminder();     // 💰 to'lov vaqti yaqin bo'lsa ogohlantirish
   // 🏢 Super-admin — qaysi mehmonxonaga kirishni o'zi tanlaydi
   if(isSuper && allHotels.length) setTimeout(pickHotelModal,250);
 }
@@ -1946,6 +1949,41 @@ function startTrObserver(){
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',startTrObserver);
 else startTrObserver();
 
+/* 💰 To'lov ogohlantirishi — 5 kun qolganda yoki muddat o'tganda.
+   Super-admin (siz) uchun ko'rsatilmaydi — faqat mijoz (admin/menejer). */
+function showPayReminder(){
+  if(isSuper || !myHotelNextDue) return;
+  const p=String(myHotelNextDue).slice(0,10).split('-');
+  const due=new Date(+p[0], +p[1]-1, +p[2]); due.setHours(0,0,0,0);
+  const today=todayTashkent(); today.setHours(0,0,0,0);
+  const daysLeft=Math.ceil((due.getTime()-today.getTime())/DAY);
+  if(daysLeft>5) return;                 // hali erta — ogohlantirmaymiz
+  // shu kun uchun bir marta ko'rsatamiz (yopgandan keyin qayta chiqmasin)
+  const key='payWarn_'+ymd(today);
+  if(sessionStorage && sessionStorage.getItem(key)) return;
+
+  const overdue=daysLeft<0;
+  const d=document.createElement('div');
+  d.style.cssText='position:fixed;inset:0;z-index:9998;background:rgba(8,10,14,.72);display:flex;align-items:center;justify-content:center;padding:24px';
+  d.innerHTML=`
+    <div style="max-width:440px;width:100%;background:var(--panel);border:1px solid ${overdue?'var(--red)':'var(--brass-dim)'};border-radius:16px;padding:30px 28px;text-align:center">
+      <div style="font-size:44px;margin-bottom:14px">${overdue?'🔴':'⏰'}</div>
+      <div style="font-size:18px;font-weight:700;color:var(--paper);margin-bottom:10px">
+        ${overdue?"Obuna to'lovi muddati o'tdi":"Obuna to'lovi vaqti yaqinlashdi"}</div>
+      <div style="font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:22px">
+        ${overdue
+          ? `To'lov muddati <b style="color:var(--red-ink)">${Math.abs(daysLeft)} kun oldin</b> o'tган. Dasturdan uzluksiz foydalanish uchun iltimos to'lovni amalga oshiring.`
+          : `Keyingi to'lovга <b style="color:var(--brass)">${daysLeft} kun</b> qoldi (${fmt(due)}). Uzilishsiz ishlash uchun oldindan to'lang.`}
+        <br><br>Dastur operatori bilan bog'laning.
+      </div>
+      <button id="payWarnOk" style="background:var(--brass);color:#0d0f14;border:0;border-radius:10px;padding:11px 28px;font-size:14px;font-weight:600;cursor:pointer">Tushunarli</button>
+    </div>`;
+  document.body.appendChild(d);
+  document.getElementById('payWarnOk').onclick=()=>{
+    try{ sessionStorage.setItem(key,'1'); }catch(e){}
+    d.remove();
+  };
+}
 function setLang(l){LANG=l;buildNav();render();applyLang(document.body);}
 /* ===== MATN HAJMI (har xodim o'z kompyuterida tanlaydi) ===== */
 let UI_SCALE='md';
