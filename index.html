@@ -6112,6 +6112,7 @@ const SB_KEY='sb_publishable_FGaZYRcF0mewLes59vAJeQ_jvWAZxGP';
 let HOTEL_ID='grand_capital';   // login paytida hotel_users jadvalidan aniqlanadi
 let SB=null, cloudReady=false, saveTimer=null, syncTimer=null, lastSavedAt=0, cloudBusy=false, savePending=false, seedDone=false, serverSeedTag=null, cleanedEmpty21=false;
 let cloudLoadedOK=false;   // ⚠️ birinchi muvaffaqiyatli yuklashsiz SAQLAMAYMIZ (ma'lumot yo'qolmasin)
+let appliedStart=null;     // paneldan oxirgi qo'llangan boshlanish sanasi (ms) — panel o'zgarishini sezish uchun
 
 // Supabase mijozini ishga tushiramiz
 try{
@@ -6156,10 +6157,17 @@ async function cloudLoad(){
     const {data:st,error:e3}=await SB.from('settings').select('data').eq('hotel_id',HOTEL_ID).maybeSingle();
     if(e3) throw e3;
     const d=(st&&st.data)||{};
-    // ⚠️ ISH KUNI (business date) — FAQAT nochnoy audit bilan suriladi.
-    // Kompyuter kuni oldinga ketsa ham, dastur sanasi joyida turadi (Shelter/Exely uslubi).
-    if(d.base) base.setTime(d.base);
-    else base.setTime(hotelStartMs());   // birinchi ishga tushirish — panelda belgilangan sana
+    // ⚠️ ISH KUNI (business date): odatda FAQAT nochnoy audit bilan suriladi.
+    // LEKIN operator PANELDA boshlanish sanasini o'zgartirsa — dastur o'sha kunga suriladi
+    // (panelning "sanani o'zgartirsangiz dastur o'sha kunga suriladi" va'dasi shu bilan bajariladi).
+    const panelMs = hotelStartMs();                                          // paneldagi start_date, yarim tunda
+    const baseMs  = (d.base!=null) ? stripTime(new Date(d.base)).getTime() : null;
+    let usePanel;
+    if(baseMs==null)              usePanel = true;                           // birinchi ishga tushirish — paneldan
+    else if(d.appliedStart!=null) usePanel = (d.appliedStart!==panelMs);     // panel o'zgardimi? o'zgargan bo'lsa — suramiz
+    else                          usePanel = (panelMs > baseMs);             // eski data (migratsiya): panel OLDINGA surilgan bo'lsagina
+    base.setTime(usePanel ? panelMs : d.base);
+    appliedStart = panelMs;   // shu qiymatni eslab qolamiz — keyingi panel o'zgarishini sezish uchun
     ganttStart=new Date(base.getTime()-2*DAY);
     if(d.ackedShubha) ackedShubha=d.ackedShubha;
     if(d.auditHistory) auditHistory=d.auditHistory;
@@ -6226,7 +6234,7 @@ async function cloudSave(){
     }
     // boshqa xodim qo'shgan, bizda yo'q bronlar bo'lsa — keyingi sinxronda o'zi keladi
     // 2) sozlamalar
-    const conf={ savedAt:Date.now(), base:base.getTime(), ganttStart:ganttStart.getTime(),
+    const conf={ savedAt:Date.now(), base:base.getTime(), appliedStart:(appliedStart!=null?appliedStart:hotelStartMs()), ganttStart:ganttStart.getTime(),
       rooms, typeRates, hotelCfg, companies, companyData, statChannels, channels,
       pendingBookings, emArchive, emehmonTolerance, usdRate, eurRate, rubRate, LANG, statusColors, ackedShubha, auditHistory, roomBlocks, shifts,
       cleanedEmpty21: cleanedEmpty21||undefined,   // bir marta tozalangani belgisi — o'chmaydi
@@ -6314,6 +6322,7 @@ async function seedCleanStart(){
     stays=[]; auditLog=[]; roomBlocks=[];
     // Sana — 21.07.2026, hech qanday bron QOLMAYDI (mutlaqo bo'sh)
     base.setTime(hotelStartMs());
+    appliedStart=hotelStartMs();       // panel sanasi qo'llandi — belgilab qo'yamiz
     ganttStart=new Date(base.getTime()-2*DAY);
     cleanedEmpty21=true;               // ⚠️ endi hech qachon qayta tozalamaydi
     lastFingerprint=''; seedDone=true;
