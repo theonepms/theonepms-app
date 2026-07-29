@@ -5378,26 +5378,102 @@ function addChannel(){
 function rmChannel(i){statChannels.splice(i,1);render();}
 function renderStatistika(){
   const months=['Yan','Fev','Mar','Apr','May','Iyn','Iyl','Avg','Sen','Okt','Noy','Dek'];
-  const data=[38,42,55,61,72,68,80,85,74,66,58,49];
-  const max=Math.max(...data); const yearTotal=data.reduce((a,b)=>a+b,0);
-  const bars=months.map((m,i)=>`<div class="b ${i===4?'today':''}"><div class="vv">${data[i]}</div><div class="f" style="height:${data[i]/max*100}%"></div><div class="lb">${m}</div></div>`).join('');
-  const chanRows=statChannels.map((c,i)=>`<tr><td><b>${c.name}</b></td>
-    <td style="width:50%"><div style="background:var(--panel-2);border-radius:20px;height:9px;overflow:hidden"><div style="width:${c.pct}%;height:100%;background:linear-gradient(90deg,#60a5fa,#2563eb)"></div></div></td>
-    <td class="money">${c.pct}%</td>
-    <td><button class="btn btn-ghost" style="padding:4px 9px;font-size:12px" onclick="rmChannel(${i})">✕</button></td></tr>`).join('');
+  const startMs=hotelStartMs();            // hotel ochilgan kun (yarim tun)
+  const endMs=base.getTime();              // bugungi ish kuni
+  const y=base.getFullYear(), mo=base.getMonth();
+
+  /* [fromMs,toMs] oralig'i (kunlar, ikkalasi ham kiritiladi) uchun HAQIQIY ko'rsatkichlar.
+     Faqat bekor qilinmagan bronlar; ta'mirga yopilgan xonalar bo'sh joyga kirmaydi. */
+  function metrics(fromMs,toMs){
+    if(toMs<fromMs) return {roomNights:0,revenue:0,availNights:0,occ:0,adr:0};
+    let roomNights=0, revenue=0;
+    stays.forEach(s=>{
+      if(s.status==='canceled') return;
+      const n=nights(s);
+      for(let i=0;i<n;i++){
+        const nd=stripTime(nightDate(s,i)).getTime();
+        if(nd>=fromMs && nd<=toMs){ roomNights++; revenue+=(+(s.rates&&s.rates[i])||0); }
+      }
+    });
+    let availNights=0;
+    const totalRooms=rooms.length;
+    for(let d=fromMs; d<=toMs; d+=DAY){
+      const dayStr=ymd(new Date(d));
+      const closed=new Set();
+      (roomBlocks||[]).forEach(b=>{ if(dayStr>=b.from && dayStr<=b.to) closed.add(b.room); });
+      availNights+=Math.max(0,totalRooms-closed.size);
+    }
+    const occ=availNights>0?(roomNights/availNights*100):0;
+    const adr=roomNights>0?(revenue/roomNights):0;
+    return {roomNights,revenue,availNights,occ,adr};
+  }
+
+  // Har oy (joriy yil) — grafik va "eng band oy" uchun
+  const monthMetrics=[];
+  for(let m=0;m<12;m++){
+    const mStart=Math.max(stripTime(new Date(y,m,1)).getTime(), startMs);
+    const mEnd=Math.min(stripTime(new Date(y,m+1,0)).getTime(), endMs);
+    monthMetrics[m]=(mStart<=mEnd)?metrics(mStart,mEnd):{roomNights:0,revenue:0,availNights:0,occ:0,adr:0};
+  }
+
+  const monthStart=Math.max(stripTime(new Date(y,mo,1)).getTime(), startMs);
+  const yearStart=Math.max(stripTime(new Date(y,0,1)).getTime(), startMs);
+  const M=metrics(monthStart,endMs);   // shu oy (bugungacha)
+  const Y=metrics(yearStart,endMs);    // shu yil (bugungacha)
+
+  // eng band oy (bandlik foizi bo'yicha)
+  let busiest=-1;
+  for(let m=0;m<12;m++){ if(monthMetrics[m].roomNights>0 && (busiest<0 || monthMetrics[m].occ>monthMetrics[busiest].occ)) busiest=m; }
+
+  // grafik — oylik yashash tushumi
+  const revs=monthMetrics.map(x=>x.revenue);
+  const maxRev=Math.max(1,...revs);
+  const big=maxRev>=1e6;
+  const fmtRev=v=> big?((v/1e6).toFixed(v>=1e7?0:1)) : Math.round(v/1000);
+  const revUnit=big?'mln':'ming';
+  const bars=months.map((mn,i)=>{
+    const v=revs[i], h=Math.round(v/maxRev*100);
+    return `<div class="b ${i===mo?'today':''}"><div class="vv">${v>0?fmtRev(v):''}</div><div class="f" style="height:${h}%"></div><div class="lb">${mn}</div></div>`;
+  }).join('');
+  const anyData=Y.roomNights>0;
+
+  // Kanal (bron manbai) — HAQIQIY taqsimot (s.company bo'yicha, joriy yil)
+  function channelStat(fromMs,toMs){
+    const cnt={}; let total=0;
+    stays.forEach(s=>{
+      if(s.status==='canceled') return;
+      const inMs=stripTime(s.inDate).getTime();
+      if(inMs<fromMs || inMs>toMs) return;
+      const c=((s.company||'').trim())||'Walk-in';
+      cnt[c]=(cnt[c]||0)+1; total++;
+    });
+    if(!total) return `<div class="panel"><div class="panel-h"><h3>${P("Kanal bo'yicha (bron manbai)")}</h3></div><div class="empty-state">Hali bron yo'q.</div></div>`;
+    const rows=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).map(([name,n])=>{
+      const pct=Math.round(n/total*100);
+      return `<tr><td><b>${name}</b></td>
+        <td style="width:50%"><div style="background:var(--panel-2);border-radius:20px;height:9px;overflow:hidden"><div style="width:${pct}%;height:100%;background:linear-gradient(90deg,#60a5fa,#2563eb)"></div></div></td>
+        <td class="money">${pct}%</td><td style="color:var(--txt-3)">${n} ta</td></tr>`;
+    }).join('');
+    return `<div class="panel"><div class="panel-h"><h3>${P("Kanal bo'yicha (bron manbai)")}</h3><span class="spacer"></span><span class="pill">${total} ta bron · ${y}</span></div>
+      <table class="data"><tbody>${rows}</tbody></table></div>`;
+  }
+
   return `<div class="stats">
-    <div class="stat accent a-blue"><div class="l">Yillik tushum</div><div class="v">${yearTotal}<small> mln</small></div><div class="d up">▲ 2026</div></div>
-    <div class="stat accent a-green"><div class="l">O'rtacha bandlik</div><div class="v">68<small>%</small></div><div class="d up">▲ o'tgan yilga nisbatan</div></div>
-    <div class="stat accent a-violet"><div class="l">O'rtacha narx (ADR)</div><div class="v">0.62<small> mln</small></div></div>
-    <div class="stat accent a-amber"><div class="l">Eng band oy</div><div class="v" style="font-size:20px">Avgust</div><div class="d">85 mln so'm</div></div>
+    <div class="stat accent a-blue"><div class="l">Yillik tushum (yashash)</div><div class="v">${somNum(Y.revenue)}<small> so'm</small></div><div class="d">${y}-yil · dastur ochilgandan beri</div></div>
+    <div class="stat accent a-green"><div class="l">O'rtacha bandlik (yil)</div><div class="v">${Y.occ.toFixed(1)}<small>%</small></div><div class="d">${Y.roomNights} / ${Y.availNights} xona-tun</div></div>
+    <div class="stat accent a-violet"><div class="l">O'rtacha narx (ADR, yil)</div><div class="v">${somNum(Y.adr)}<small> so'm</small></div><div class="d">yashash tushumi / xona-tun</div></div>
+    <div class="stat accent a-amber"><div class="l">Eng band oy</div><div class="v" style="font-size:20px">${busiest>=0?months[busiest]:'—'}</div><div class="d">${busiest>=0?monthMetrics[busiest].occ.toFixed(0)+'% · '+somNum(monthMetrics[busiest].revenue)+' so\'m':'ma\'lumot yo\'q'}</div></div>
   </div>
-  <div class="panel"><div class="panel-h"><h3>${P("Oylik tushum — 2026")}</h3><span class="spacer"></span><span class="pill">mln so'm</span></div>
-    <div class="wk-chart" style="height:200px">${bars}</div><div style="height:16px"></div></div>
-  <div class="hint" style="background:#eff4ff;color:var(--brand-ink)"><span>Har bir hotel o'zi ishlaydigan online saytlarni (Booking, Expedia, Trip.com...) qo'lda qo'shadi. Ko'chadan kelganlar — <b>Walk-in</b>, boshqa hammasi — <b>ALL</b> deb umumlashtiriladi. Bu ro'yxat aralashib ketmasligi uchun.</span></div>
-  <div class="panel"><div class="panel-h"><h3>${P("Kanal bo'yicha (bron manbai)")}</h3><span class="spacer"></span>
-    <input id="chanName" placeholder="Yangi sayt/kanal nomi" style="padding:7px 12px;border:1.5px solid var(--line);border-radius:7px;font-size:13px">
-    <button class="btn btn-primary" style="padding:7px 14px;margin-left:8px" onclick="addChannel()">＋ Qo'shish</button></div>
-    <table class="data"><tbody>${chanRows}</tbody></table></div>`;
+  <div class="stats">
+    <div class="stat accent a-green"><div class="l">Shu oy tushumi</div><div class="v">${somNum(M.revenue)}<small> so'm</small></div><div class="d">${fmt(new Date(monthStart))} — ${fmt(base)}</div></div>
+    <div class="stat accent a-blue"><div class="l">Shu oy bandligi</div><div class="v">${M.occ.toFixed(1)}<small>%</small></div><div class="d">${M.roomNights} / ${M.availNights} xona-tun</div></div>
+    <div class="stat accent a-violet"><div class="l">Shu oy ADR</div><div class="v">${somNum(M.adr)}<small> so'm</small></div><div class="d">o'rtacha kunlik narx</div></div>
+    <div class="stat accent a-amber"><div class="l">Bo'sh xona-tun (yil)</div><div class="v">${somNum(Math.max(0,Y.availNights-Y.roomNights))}</div><div class="d">sotilmagan imkoniyat</div></div>
+  </div>
+  <div class="panel"><div class="panel-h"><h3>${P("Oylik tushum — 2026")}</h3><span class="spacer"></span><span class="pill">${revUnit} so'm · yashash</span></div>
+    ${anyData?`<div class="wk-chart" style="height:200px">${bars}</div><div style="height:16px"></div>`:`<div class="empty-state">Hali bron yo'q — ma'lumot to'planishi bilan grafik chiziladi.</div>`}</div>
+  <div class="hint" style="background:#eff4ff;color:var(--brand-ink)"><span>Bandlik va ADR faqat <b>haqiqiy bronlardan</b> hisoblanadi. Ta'mirga yopilgan xonalar bandlik foiziga <b>kirmaydi</b>, bekor qilinganlar hisobga olinmaydi. Kassa hisoboti — <b>haqiqiy pul harakati</b>ni; bu sahifa — <b>yashash tushumi</b>ni ko'rsatadi.</span></div>
+  ${channelStat(yearStart,endMs)}`;
 }
 
 /* ================= SOZLAMALAR ================= */
