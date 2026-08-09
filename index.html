@@ -3129,6 +3129,14 @@ function saveReg(status){
 
 /* ================= FOLIO ================= */
 let folioEdit=null;
+/* Nazorat/Shubha yozuvini bosganda — NOYOB ID bo'yicha aynan o'sha mehmon foliosi ochiladi.
+   Xona yoki ism bir xil bo'lsa ham adashmaydi. Bron topilmasa — ohista xabar, panel buzilmaydi. */
+function openFolioFromLog(id){
+  if(!id){ toast('Bu eski yozuv — bron bog\'lanmagan (ID yo\'q).',false); return; }
+  const s=stays.find(x=>x.id===id);
+  if(!s){ toast('Bron topilmadi — o\'chirilgan yoki eski yozuv.',false); return; }
+  openFolio(id);
+}
 function openFolio(id,keepEdit){
   const s=stays.find(x=>x.id===id); if(!s)return;
   if(!keepEdit){
@@ -3358,7 +3366,7 @@ function saveFolio(id){
 
 /* --- folio actions (these generate manager audit entries when post-checkin) --- */
 function logAction(s,type,text,amount,reason){
-  const entry={type,text,amount:amount||0,reason:reason||'',by:role==='admin'?'Administrator':role==='owner'?'Owner':'Menejer',time:uzTime()+' · '+fmtShort(base),day:ymd(base),stayDate:fmt(s.inDate),actDate:fmt(base)};
+  const entry={type,text,amount:amount||0,reason:reason||'',by:role==='admin'?'Administrator':role==='owner'?'Owner':'Menejer',time:uzTime()+' · '+fmtShort(base),day:ymd(base),stayDate:fmt(s.inDate),actDate:fmt(base),stayId:s.id};
   const full=Object.assign({room:s.room,guest:s.firstName+' '+s.lastName},entry);
   auditLog.unshift(full);
   // xonaning o'z tarixi — HECH KIM o'chirolmaydi (foliyada pastda ko'rinadi)
@@ -4655,29 +4663,36 @@ function renderShubha(){
   const f=(shubhaFilter==='ref'||shubhaFilter==='iz')?shubhaFilter:'all';
   const shown = f==='ref'?all.filter(isRef) : f==='iz'?all.filter(isIz) : all;
 
-  // 🕐 soat (a.time'dan) + 📅 to'liq sana (a.day → DD.MM.YYYY)
-  const whenOf=a=>{
-    let clock=''; const m=(a.time||'').match(/(\d{1,2}:\d{2})/); if(m) clock=m[1];
-    let dstr=''; if(a.day){ const p=a.day.split('-'); if(p.length===3) dstr=`${p[2]}.${p[1]}.${p[0]}`; }
-    return (clock||'') + ((clock&&dstr)?' · ':'') + (dstr||'');
-  };
+  // 🕐 soat (a.time'dan) — sana endi kun sarlavhasida ko'rinadi
+  const clockOf=a=>{ const m=(a.time||'').match(/(\d{1,2}:\d{2})/); return m?m[1]:''; };
 
-  const rows=shown.map(a=>{
-    const ref=isRef(a);
-    const col=ref?'var(--red)':'var(--amber)';
-    const ink=ref?'var(--red-ink)':'var(--amber-ink)';
-    const badge=ref?'🔴 VOZVRAT':'✏️ IZMENIT';
-    const isAdm=/admin/i.test(a.by||'');
-    return `<tr style="border-left:3px solid ${col}">
-      <td style="white-space:nowrap;font-family:'JetBrains Mono';font-size:12px">${whenOf(a)}</td>
-      <td><b class="mono">${a.room||'—'}</b></td>
-      <td>${a.guest||'—'}</td>
-      <td><b style="color:${ink}">${badge}</b> ${a.text||''}</td>
-      <td class="money">${a.amount?`<b>${money(a.amount)}</b>`:'—'}</td>
-      <td style="white-space:nowrap">${isAdm?`<b style="color:var(--red-ink)">${a.by}</b>`:a.by}</td>
-      <td>${a.reason?'💬 '+a.reason:'<i style="color:var(--red-ink)">sabab yo\'q</i>'}</td>
-    </tr>`;
-  }).join('');
+  // ── KUN bo'yicha guruhlash (yangi kun tepada) ──
+  const byDay={}, dayOrder=[];
+  shown.forEach(a=>{ const d=a.day||ymd(base); if(!byDay[d]){ byDay[d]=[]; dayOrder.push(d); } byDay[d].push(a); });
+  dayOrder.sort((x,y)=>y.localeCompare(x));   // yangi sana tepada
+
+  let rows='';
+  dayOrder.forEach(d=>{
+    const p=d.split('-'); const dObj=new Date(+p[0],+p[1]-1,+p[2]); const cnt=byDay[d].length;
+    rows+=`<tr style="background:var(--panel-2)"><td colspan="7" style="padding:9px 12px;font-weight:700;color:var(--brand-ink);font-size:12.5px">📅 ${fmt(dObj)} · ${wdName(dObj.getDay())} <span style="color:var(--txt-3);font-weight:500">— ${cnt} ta amal</span></td></tr>`;
+    byDay[d].forEach(a=>{
+      const ref=isRef(a);
+      const col=ref?'var(--red)':'var(--amber)';
+      const ink=ref?'var(--red-ink)':'var(--amber-ink)';
+      const badge=ref?'🔴 VOZVRAT':'✏️ IZMENIT';
+      const isAdm=/admin/i.test(a.by||'');
+      const click=a.stayId?` onclick="openFolioFromLog('${a.stayId}')" style="cursor:pointer;border-left:3px solid ${col}" title="Bosing — mehmon foliosiga o'tish"`:` style="border-left:3px solid ${col}"`;
+      rows+=`<tr${click}>
+        <td style="white-space:nowrap;font-family:'JetBrains Mono';font-size:12px">${clockOf(a)}</td>
+        <td><b class="mono">${a.room||'—'}</b></td>
+        <td>${a.guest||'—'}${a.stayId?' <span style="color:var(--brand-ink);font-size:11px">↗</span>':''}</td>
+        <td><b style="color:${ink}">${badge}</b> ${a.text||''}</td>
+        <td class="money">${a.amount?`<b>${money(a.amount)}</b>`:'—'}</td>
+        <td style="white-space:nowrap">${isAdm?`<b style="color:var(--red-ink)">${a.by}</b>`:a.by}</td>
+        <td>${a.reason?'💬 '+a.reason:'<i style="color:var(--red-ink)">sabab yo\'q</i>'}</td>
+      </tr>`;
+    });
+  });
 
   return `<div class="hint" style="background:var(--red-bg);color:var(--red-ink)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
     <span>Bu yerda faqat <b>2 xil sezgir amal</b>: 🔴 <b>vozvratlar</b> (kassadan pul chiqishi — menejer va admin) va ✏️ <b>menejer izmeniti</b> (tuzatish). Har biri <b>soat va sana</b> bilan yoziladi — <b>🔒 hech kim o'chira olmaydi</b>.</span></div>
@@ -4744,14 +4759,17 @@ function renderNazorat(){
     const amt=a.amount?`<b>${a.amount>0?'+':''}${money(a.amount)}</b>`:'—';
     // ⚠️ ADMIN qilgan amallar QIZIL — ko'zga tashlansin
     const isAdm=/admin/i.test(a.by||'');
-    const rowStyle=isAdm?' style="border-left:3px solid var(--red)"':'';
+    const baseBorder=isAdm?'border-left:3px solid var(--red)':'';
+    const rowAttr = a.stayId
+      ? ` onclick="openFolioFromLog('${a.stayId}')" style="cursor:pointer;${baseBorder}" title="Bosing — mehmon foliosiga o'tish"`
+      : (baseBorder?` style="${baseBorder}"`:'');
     const byCell=isAdm
       ? `<b style="color:var(--red-ink)">${a.by}</b>`
       : a.by;
-    rows+=`<tr${rowStyle}>
+    rows+=`<tr${rowAttr}>
       <td style="white-space:nowrap;font-family:'JetBrains Mono';font-size:12px">${a.time}</td>
       <td><b class="mono">${a.room}</b></td>
-      <td>${a.guest}</td>
+      <td>${a.guest}${a.stayId?' <span style="color:var(--brand-ink);font-size:11px">↗</span>':''}</td>
       <td${isAdm?' style="color:var(--red-ink)"':''}>${a.text}${twoDate}</td>
       <td class="money"${isAdm?' style="color:var(--red-ink)"':''}>${amt}</td>
       <td>${a.reason?'💬 '+a.reason:'—'}</td>
