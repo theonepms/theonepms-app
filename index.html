@@ -2361,6 +2361,7 @@ const NAV_COMMON=[
 ];
 const NAV_MANAGER_EXTRA=[
   {s:'nazorat_s'},
+  {k:'shubha',i:'alert',badge2:true},
   {k:'nazorat',i:'shield',badge:true},
   {k:'emehmon',i:'compare'},
 ];
@@ -2374,6 +2375,7 @@ const NAV_OWNER=[
   {k:'statistika',i:'chart'},
   {k:'qarzdorlik',i:'alert'},
   {s:'nazorat_s'},
+  {k:'shubha',i:'alert',badge2:true},
   {k:'nazorat',i:'shield',badge:true},
   {k:'emehmon',i:'compare'},
 ];
@@ -2405,7 +2407,7 @@ function buildNav(){
   if(isSuper) items=NAV_SUPER.concat(items);
   const openCount=auditLog.filter(a=>(a.day||ymd(base))===ymd(base)).length;
   let shubhaCount=0;
-  try{ if(role==='manager'||role==='owner') shubhaCount=shubhaList().filter(x=>!ackedShubha[x.key]).length; }catch(e){}
+  try{ if(role==='manager'||role==='owner'){ const today=ymd(base); shubhaCount=auditLog.filter(a=>{const t=a.text||'';return (a.day||today)===today && (/PUL QAYTARILDI/i.test(t)||/IZMENIT/i.test(t));}).length; } }catch(e){}
   document.getElementById('nav').innerHTML=items.map(it=>{
     if(it.s) return `<div class="navsec">${t(it.s)}</div>`;
     const b=it.badge&&openCount?`<span class="badge">${openCount}</span>`
@@ -4642,63 +4644,58 @@ function shubhaPatterns(list){
 
 function renderShubha(){
   if(role!=='manager' && role!=='owner') return `<div class="panel"><div class="empty-state">Bu bo'lim faqat menejer va egasi uchun.</div></div>`;
-  const all=shubhaList();
-  const pats=shubhaPatterns(all);
-  const openList=all.filter(x=>!ackedShubha[x.key]);
-  const shown=shubhaFilter==='all'?openList
-    :shubhaFilter==='high'?openList.filter(x=>x.lvl==='high')
-    :shubhaFilter==='mid'?openList.filter(x=>x.lvl==='mid')
-    :all.filter(x=>ackedShubha[x.key]);   // 'done'
-  const hi=openList.filter(x=>x.lvl==='high').length;
-  const md=openList.filter(x=>x.lvl==='mid').length;
-  const done=all.length-openList.length;
+  // ⚠️ FAQAT 2 xil sezgir amal:
+  //   (1) VOZVRAT — pul qaytarish (kassadan chiqadi): menejer VA admin
+  //   (2) IZMENIT — menejer tuzatishi (har qanday kun)
+  const isRef=a=>/PUL QAYTARILDI/i.test(a.text||'');
+  const isIz =a=>/IZMENIT/i.test(a.text||'');
+  const all=auditLog.filter(a=>isRef(a)||isIz(a));   // auditLog[0] = eng yangi (yangi tepada)
+  const refCount=all.filter(isRef).length;
+  const izCount =all.filter(isIz).length;
+  const f=(shubhaFilter==='ref'||shubhaFilter==='iz')?shubhaFilter:'all';
+  const shown = f==='ref'?all.filter(isRef) : f==='iz'?all.filter(isIz) : all;
 
-  const rows=[...shown].reverse().map(x=>{
-    const a=x.a, ack=ackedShubha[x.key];
-    const col=x.lvl==='high'?'var(--red)':'var(--amber)';
-    const bg =x.lvl==='high'?'var(--red-bg)':'var(--amber-bg)';
-    const ink=x.lvl==='high'?'var(--red-ink)':'var(--amber-ink)';
-    const canAck = !ack && (role==='owner' || x.byRole!=='manager');
-    return `<div class="arr-item" style="border-left:4px solid ${col};background:${ack?'var(--panel-2)':bg};align-items:flex-start">
-      <div class="who" style="flex:1">
-        <b style="color:${ink}">${x.lvl==='high'?'🔴':'🟡'} ${x.why}</b>
-        <span style="display:block;margin-top:2px;color:var(--txt)">${a.text}</span>
-        <span style="display:block;margin-top:2px">Xona <b>${a.room}</b> · ${a.guest||'—'}${a.amount?` · <b>${money(a.amount)}</b>`:''}</span>
-        <span style="display:block;margin-top:2px;color:var(--txt-3)">
-          ${/admin/i.test(a.by||'')?`<b style="color:var(--red-ink)">${a.by}</b>`:a.by} · ${a.time}
-          ${a.reason?` · 💬 ${a.reason}`:' · <i style="color:var(--red-ink)">sabab yozilmagan</i>'}</span>
-        ${ack?`<span style="display:block;margin-top:4px;color:var(--green-ink);font-size:11.5px">✓ Tekshirdi: ${ack.by} · ${ack.at}</span>`:''}
-      </div>
-      <div class="meta" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-        ${canAck?`<button class="btn btn-ghost" style="padding:6px 10px;font-size:12px" onclick="shubhaAck('${x.key.replace(/'/g,"\\'")}')">✓ Tekshirdim</button>`:''}
-        ${(!ack && !canAck)?`<span style="font-size:11px;color:var(--txt-3)">Owner tasdiqlaydi</span>`:''}
-      </div></div>`;
+  // 🕐 soat (a.time'dan) + 📅 to'liq sana (a.day → DD.MM.YYYY)
+  const whenOf=a=>{
+    let clock=''; const m=(a.time||'').match(/(\d{1,2}:\d{2})/); if(m) clock=m[1];
+    let dstr=''; if(a.day){ const p=a.day.split('-'); if(p.length===3) dstr=`${p[2]}.${p[1]}.${p[0]}`; }
+    return (clock||'') + ((clock&&dstr)?' · ':'') + (dstr||'');
+  };
+
+  const rows=shown.map(a=>{
+    const ref=isRef(a);
+    const col=ref?'var(--red)':'var(--amber)';
+    const ink=ref?'var(--red-ink)':'var(--amber-ink)';
+    const badge=ref?'🔴 VOZVRAT':'✏️ IZMENIT';
+    const isAdm=/admin/i.test(a.by||'');
+    return `<tr style="border-left:3px solid ${col}">
+      <td style="white-space:nowrap;font-family:'JetBrains Mono';font-size:12px">${whenOf(a)}</td>
+      <td><b class="mono">${a.room||'—'}</b></td>
+      <td>${a.guest||'—'}</td>
+      <td><b style="color:${ink}">${badge}</b> ${a.text||''}</td>
+      <td class="money">${a.amount?`<b>${money(a.amount)}</b>`:'—'}</td>
+      <td style="white-space:nowrap">${isAdm?`<b style="color:var(--red-ink)">${a.by}</b>`:a.by}</td>
+      <td>${a.reason?'💬 '+a.reason:'<i style="color:var(--red-ink)">sabab yo\'q</i>'}</td>
+    </tr>`;
   }).join('');
 
-  const patHtml=pats.length?`<div class="panel" style="margin-bottom:14px"><div class="panel-h"><h3>🔵 Naqsh (takrorlanuvchi xatti-harakat)</h3></div>
-    ${pats.map(p=>`<div class="arr-item" style="border-left:4px solid ${p.lvl==='high'?'var(--red)':'var(--amber)'}">
-      <div class="who"><span>${p.txt}</span></div></div>`).join('')}</div>`:'';
-
   return `<div class="hint" style="background:var(--red-bg);color:var(--red-ink)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-    <span>Bu yerda dastur <b>o'zi ajratgan</b> xavfli amallar. ${role==='owner'?'Siz <b>menejer va administrator</b> amallarini ko\'rasiz.':'Siz <b>administrator</b> amallarini tekshirasiz. O\'z amallaringizni faqat <b>Owner</b> yopadi.'}</span></div>
+    <span>Bu yerda faqat <b>2 xil sezgir amal</b>: 🔴 <b>vozvratlar</b> (kassadan pul chiqishi — menejer va admin) va ✏️ <b>menejer izmeniti</b> (tuzatish). Har biri <b>soat va sana</b> bilan yoziladi — <b>🔒 hech kim o'chira olmaydi</b>.</span></div>
   <div class="stats">
-    <div class="stat"><div class="l">🔴 Yuqori xavf</div><div class="v" style="color:var(--red-ink)">${hi}</div></div>
-    <div class="stat"><div class="l">🟡 O'rta xavf</div><div class="v" style="color:var(--amber-ink)">${md}</div></div>
-    <div class="stat"><div class="l">✓ Tekshirilgan</div><div class="v" style="color:var(--green-ink)">${done}</div></div>
+    <div class="stat"><div class="l">🔴 Vozvratlar</div><div class="v" style="color:var(--red-ink)">${refCount}</div></div>
+    <div class="stat"><div class="l">✏️ Izmenitlar</div><div class="v" style="color:var(--amber-ink)">${izCount}</div></div>
     <div class="stat"><div class="l">Jami yozuv</div><div class="v">${all.length}</div></div>
   </div>
-  ${patHtml}
   <div class="panel"><div class="panel-h"><h3>Shubhali amallar</h3><span class="spacer"></span>
     <div class="seg">
-      <button class="${shubhaFilter==='all'?'on':''}" onclick="setShubhaFilter('all')">Hammasi (${openList.length})</button>
-      <button class="${shubhaFilter==='high'?'on':''}" onclick="setShubhaFilter('high')">🔴 ${hi}</button>
-      <button class="${shubhaFilter==='mid'?'on':''}" onclick="setShubhaFilter('mid')">🟡 ${md}</button>
-      <button class="${shubhaFilter==='done'?'on':''}" onclick="setShubhaFilter('done')">✓ ${done}</button>
+      <button class="${f==='all'?'on':''}" onclick="setShubhaFilter('all')">Hammasi (${all.length})</button>
+      <button class="${f==='ref'?'on':''}" onclick="setShubhaFilter('ref')">🔴 ${refCount}</button>
+      <button class="${f==='iz'?'on':''}" onclick="setShubhaFilter('iz')">✏️ ${izCount}</button>
     </div>
-    <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px;margin-left:8px" onclick="exportPageExcel()">⤓ Excel</button></div>
-    ${rows||`<div class="empty-state" style="color:var(--green-ink)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 6L9 17l-5-5"/></svg>
-      ${shubhaFilter==='done'?'Hali hech narsa tekshirilmagan.':'Shubhali amal yo\'q — hammasi joyida.'}</div>`}
+    <span style="font-size:11px;color:var(--txt-3);margin:0 8px">🔒 O'chirib bo'lmaydi</span>
+    <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px" onclick="exportPageExcel()">⤓ Excel</button></div>
+    <table class="data"><thead><tr><th>${P("Vaqt")}</th><th>${P("Xona")}</th><th>${P("Mehmon")}</th><th>${P("Nima qilindi")}</th><th>${P("Summa")}</th><th>${P("Kim")}</th><th>${P("Sabab")}</th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="7" style="text-align:center;padding:26px;color:var(--green-ink)">Hali vozvrat yoki izmenit qilinmagan — hammasi joyida.</td></tr>`}</tbody></table>
   </div>`;
 }
 
