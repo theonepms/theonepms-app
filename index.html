@@ -774,7 +774,7 @@ function mkStay(o){
 }
 function recalc(s){ s.price=s.rates.reduce((a,b)=>a+b,0); }
 function chargesSum(s){return (s.charges||[]).reduce((a,c)=>a+c.amount,0);}
-function paidSum(s){return s.payments.filter(p=>p.type==='pay').reduce((a,p)=>a+p.amount,0)-s.payments.filter(p=>p.type==='ref').reduce((a,p)=>a+p.amount,0);}
+function paidSum(s){const P=s.payments||[];return P.filter(p=>p.type==='pay').reduce((a,p)=>a+p.amount,0)-P.filter(p=>p.type==='ref').reduce((a,p)=>a+p.amount,0);}
 function nights(s){return Math.max(1,Math.round((s.outDate-s.inDate)/DAY));}
 function totalDue(s){return s.price+chargesSum(s);}          // yashash + qo'shimcha to'lovlar
 function balance(s){return totalDue(s)-paidSum(s);}
@@ -6415,7 +6415,12 @@ function reviveStay(s){
   s.inDate=new Date(s.inDate); s.outDate=new Date(s.outDate);
   if(s.checkoutDate) s.checkoutDate=new Date(s.checkoutDate);
   if(s._preOut) s._preOut=new Date(s._preOut);
-  (s.payments||[]).forEach(p=>{ if(p.ts) p.ts=new Date(p.ts); });
+  // 🛡 Massivlar HAR DOIM mavjud bo'lsin — bulutdan bo'sh/nuqsonli yozuv kelsa ham
+  // paidSum/chargesSum/render qulamasin (aks holda bitta nuqsonli bron butun dasturni oq ekran qiladi)
+  if(!Array.isArray(s.payments)) s.payments=[];
+  if(!Array.isArray(s.charges))  s.charges=[];
+  if(!Array.isArray(s.extra))    s.extra=[];
+  s.payments.forEach(p=>{ if(p.ts) p.ts=new Date(p.ts); });
   return s;
 }
 
