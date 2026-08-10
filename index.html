@@ -2836,7 +2836,7 @@ function wireGantt(){
     el.onmousemove=e=>moveTip(e);
     el.onmouseleave=hideTip;
     const _ds=stays.find(x=>x.id===el.dataset.id);
-    if(role!=='owner' && can('moveRoom',_ds)){
+    if(role!=='owner' && can('moveRoom',_ds) && !stayEndedPast(_ds)){
       el.setAttribute('draggable','true');
       el.addEventListener('dragstart',e=>{ dragStayId=el.dataset.id; el.style.opacity='.45'; hideTip(); });
       el.addEventListener('dragend',e=>{ el.style.opacity=''; document.querySelectorAll('.g-track.drop-hover').forEach(t=>t.classList.remove('drop-hover')); });
@@ -2854,6 +2854,8 @@ let dragStayId=null;
 function dropMoveRoom(id,room){
   const s=stays.find(x=>x.id===id); if(!s||!room||s.room===room)return;
   if(role==='owner')return;
+  // 🔒 O'tgan (tugab bo'lgan) bronni shaxmatkadan sudrab bo'lmaydi — faqat folio orqali (jurnalga yozilib)
+  if(stayEndedPast(s)){ toast('O\'tgan kun broni shaxmatkadan surilmaydi. O\'zgartirish uchun mehmon foliosiga kiring.',false); render(); return; }
   { const _bd=typeof blockConflict==='function'?blockConflict(room,s.inDate,s.outDate):null;
     if(_bd){ toast(`Xona ${room} YOPIQ (${_bd.reason}).`,false); render(); return; } }
   if(!can('moveRoom',s)){ toast('Bu bron joriy kunga tegishli emas — xonani faqat menejer ko\'chiradi.',false); render(); return; }
@@ -3403,6 +3405,13 @@ function stayIsToday(s){
   const a=stripTime(s.inDate).getTime();
   const b=stripTime(s.checkoutDate||s.outDate).getTime();
   return t>=a && t<=b;      // bugun kelgan / yashayotgan / bugun chiqqan
+}
+/* O'tgan (tugab bo'lgan) bronmi? — shaxmatkadan SUDRAB SURISHNI qulflash uchun.
+   Chiqish sanasi bugundan oldin bo'lsa → o'tgan kun → surilmaydi (faqat folio orqali). */
+function stayEndedPast(s){
+  if(!s) return false;
+  const end=stripTime(s.checkoutDate||s.outDate).getTime();
+  return end < stripTime(base).getTime();
 }
 function can(action,s){
   if(role==='manager') return true;
@@ -4281,9 +4290,10 @@ function doMoveRoom(id){
 function confirmMoveRoom(id,newRoom){
   const reason=(document.getElementById('moveReason')?.value||'').trim();
   if(!reason){toast('Ko\'chirish sababini yozing.',false);return;}
-  const s=stays.find(x=>x.id===id); const old=s.room; s.room=newRoom;
+  const s=stays.find(x=>x.id===id); const old=s.room; const wasPast=stayEndedPast(s); s.room=newRoom;
   document.getElementById('moveOverlay')?.remove();
-  logAction(s,'move',`Xona ko'chirildi: ${old} → ${newRoom}`,0,reason);
+  // O'tgan kun broni folio orqali ko'chirilsa — IZMENIT belgisi bilan shubhali amallarga ham tushadi
+  logAction(s,'move',(wasPast?'✏️ IZMENIT (o\'tgan kun): ':'')+`Xona ko'chirildi: ${old} → ${newRoom}`,0,reason);
   openFolio(id); render(); toast(`Xona ${old} → ${newRoom} — menejerga yozildi`,true);
 }
 /* Invoice / hisob-faktura — sodda va qisqa (Clock PMS proforma uslubida) */
