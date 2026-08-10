@@ -650,6 +650,21 @@ const dotNum=n=>{ let x=Math.round(+n||0); const neg=x<0; x=Math.abs(x); const s
 const money=n=>dotNum(n)+' so\'m';
 const somNum=n=>dotNum(n);
 function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+// folio server funksiyasiga QO'SHIMCHA yozish (ikki tomonlama yozish — sinov bosqichi).
+// Eski usulga TEGMAYDI. Xato bo'lsa ham dasturga ta'sir qilmaydi (jimgina o'tadi).
+async function folioSync(action, extra){
+  try{
+    const { data:{ session } } = await SB.auth.getSession();
+    if(!session) return;
+    const d=new Date(base);
+    const bd=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    await fetch(SB_URL+'/functions/v1/folio',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
+      body:JSON.stringify(Object.assign({action:action,hotel:HOTEL_ID,business_date:bd},extra))
+    });
+  }catch(_){}
+}
 /* Pul KIRITISH maydoni uchun: yozayotganda nuqta bilan formatlaydi, RAQAM qiymatini qaytaradi.
    type="text" bo'lgan pul inputlarida oninput="X=moneyVal(this)" tarzida ishlatiladi. */
 function moneyVal(el){
@@ -3134,6 +3149,7 @@ function saveReg(status){
       nightly:+r.nightly,rates,extra:r.guests.slice(1),payments,charges:[],
     });
     stays.push(s); created.push(s);
+    if(share>0) folioSync('pay',{stay_id:s.id,amount:share,method:r.pay.method,card:r.pay.method==='karta'?(r.pay.card||''):''});
   });
   closeReg(); render();
   toast((status==='in'?'Check-in bajarildi':'Bron saqlandi')+(r.rooms.length>1?` (${r.rooms.length} xona)`:'')+' ✓',true);
@@ -4062,6 +4078,7 @@ function commitAction(){
   if(a.kind==='pay'){
     const amt=+a.amount; if(!amt){toast('Summani kiriting.',false);return;}
     s.payments.push({amount:amt,method:a.method,card:a.method==='karta'?a.card:'',type:'pay',time:stamp,ts:new Date(base),by:role==='admin'?'Admin':'Menejer'});
+    folioSync('pay',{stay_id:s.id,amount:amt,method:a.method,card:a.method==='karta'?(a.card||''):''});
     if(s.status==='in')logAction(s,'money',`Check-in'dan keyin to'lov (${a.method==='karta'?a.card:'naxt'})`,amt);
     toast('To\'lov qo\'shildi ✓',true);
   } else if(a.kind==='refund'){
@@ -4079,6 +4096,7 @@ function commitAction(){
       if(amt>refundable){ toast(`Ko'pi bilan ${money(refundable)} qaytarish mumkin (qolgan summa).`,false); return; }
       const p=(s.payments||[]).filter(x=>x.type==='pay')[0]||{method:'naxt'};
       s.payments.push({amount:amt,method:a.method||p.method,card:(a.method||p.method)==='karta'?(a.card||p.card||''):'',type:'ref',time:stamp,ts:new Date(base),by:role==='admin'?'Admin':'Menejer'});
+      folioSync('refund',{stay_id:s.id,amount:amt,method:(a.method||p.method),card:(a.method||p.method)==='karta'?(a.card||p.card||''):''});
       logAction(s,'refund',`PUL QAYTARILDI (kassadan): ${money(amt)} · ${(a.method||p.method)==='karta'?(a.card||p.card||'Karta'):methodLabel(a.method||p.method)}`,amt,a.reason);
       toast('Pul qaytarildi — kassadan chiqdi. Nazoratga yozildi ✓',true);
 
@@ -4090,6 +4108,7 @@ function commitAction(){
       if(amt>stayRemain){ toast(`Ko'pi bilan ${money(stayRemain)} chegirish mumkin (qolgan).`,false); return; }
       s.charges=s.charges||[];
       s.charges.push({name:'Yashash — hisobdan chegirildi',amount:-Math.abs(amt),premicha:a.premicha,time:stamp,by:role==='admin'?'Admin':'Menejer'});
+      folioSync('charge',{stay_id:s.id,name:'Yashash — hisobdan chegirildi',amount:-Math.abs(amt),premicha:a.premicha});
       logAction(s,'refund',`HISOBDAN CHEGIRILDI (yashash): ${money(amt)} — pul harakati yo'q, qarz kamaydi`,0,a.reason);
       toast('Hisobdan chegirildi — kassaga tegmadi. Nazoratga yozildi ✓',true);
 
@@ -4104,6 +4123,7 @@ function commitAction(){
       if(remain<=0){ toast(`"${esc(c.name)}" allaqachon to'liq bekor qilingan.`,false); return; }
       if(amt>remain){ toast(`Ko'pi bilan ${money(remain)} olib tashlash mumkin (qolgan).`,false); return; }
       s.charges.push({name:`${esc(c.name)} — bekor qilindi`,amount:-Math.abs(amt),premicha:a.premicha,time:stamp,by:role==='admin'?'Admin':'Menejer'});
+      folioSync('charge',{stay_id:s.id,name:`${c.name} — bekor qilindi`,amount:-Math.abs(amt),premicha:a.premicha});
       logAction(s,'refund',`HISOBDAN OLIB TASHLANDI: ${esc(c.name)} — ${money(amt)} — pul harakati yo'q`,0,a.reason);
       toast('Hisobdan olib tashlandi — kassaga tegmadi. Nazoratga yozildi ✓',true);
     }
@@ -4111,12 +4131,14 @@ function commitAction(){
     const amt=+a.amount; if(!amt){toast('Summani kiriting.',false);return;}
     // yashash (prajivaniye) vozvrati — hisobdan chegirma (pul harakati yo'q, qarz kamayadi)
     s.charges=s.charges||[]; s.charges.push({name:'Yashash vozvrati (chegirma)',amount:-Math.abs(amt),premicha:a.premicha,time:stamp,by:role==='admin'?'Admin':'Menejer'});
+    folioSync('charge',{stay_id:s.id,name:'Yashash vozvrati (chegirma)',amount:-Math.abs(amt),premicha:a.premicha});
     logAction(s,'refund',`Yashash vozvrati (hisobdan chegirma): ${money(amt)}`,0,a.reason);
     toast('Yashash vozvrati — hisobdan chegirildi, qarz kamaydi ✓',true);
   } else if(a.kind==='sadd'){
     const amt=+a.amount; if(!amt){toast('Summani kiriting.',false);return;}
     // yashash hisobiga qo'shish (pul harakati yo'q, jami hisob va qarz oshadi)
     s.charges=s.charges||[]; s.charges.push({name:'Yashash qo\'shimcha',amount:Math.abs(amt),premicha:a.premicha,time:stamp,by:role==='admin'?'Admin':'Menejer'});
+    folioSync('charge',{stay_id:s.id,name:'Yashash qo\'shimcha',amount:Math.abs(amt),premicha:a.premicha});
     logAction(s,'edit',`Yashash hisobga qo'shildi: +${money(amt)}`,amt,a.reason);
     toast('Yashash hisobga qo\'shildi — qarz oshdi ✓',true);
   } else if(a.kind==='price'){
@@ -4133,6 +4155,7 @@ function commitAction(){
   } else if(a.kind==='charge'){
     const amt=+a.amount; if(!a.name||!amt){toast('Nom va summani kiriting.',false);return;}
     s.charges=s.charges||[]; s.charges.push({name:a.name,amount:amt,premicha:a.premicha,time:stamp,by:role==='admin'?'Admin':'Menejer'});
+    folioSync('charge',{stay_id:s.id,name:a.name,amount:amt,premicha:a.premicha});
     logAction(s,'money',`Xizmat qo'shildi: ${a.name}`,amt);
     toast('Xizmat hisobga qo\'shildi ✓ (pul emas — qarzga qo\'shildi)',true);
   } else if(a.kind==='cancel'){
@@ -4220,6 +4243,7 @@ function commitAction(){
     const amt=+a.amount; if(!amt){toast('Summani kiriting.',false);return;}
     const nm=a.elType==='early'?'Erta kirish (ranniy zayezd)':'Kech chiqish (pozdniy vyezd)';
     s.charges=s.charges||[]; s.charges.push({name:nm,amount:amt,premicha:a.premicha,time:stamp,by:role==='admin'?'Admin':'Menejer'});
+    folioSync('charge',{stay_id:s.id,name:nm,amount:amt,premicha:a.premicha});
     if(a.elType==='early') s.earlyIn=true; else s.lateOut=true;
     logAction(s,'money',nm,amt);
     toast(nm+' qo\'shildi — shaxmatkada suriladi ✓',true);
