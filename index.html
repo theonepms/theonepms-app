@@ -149,6 +149,14 @@ h1,h2,h3,h4{font-family:'Space Grotesk',Inter,sans-serif;font-weight:600;letter-
 .datenav .cur{font-weight:600;font-size:13px;padding:0 10px;min-width:110px;text-align:center}
 .view{flex:1;overflow:auto;padding:22px}
 
+/* ===== Yon panelni yopish/ochish (QO'SHIMCHA — mavjud kodga tegilmagan) ===== */
+#app{transition:grid-template-columns .25s ease}
+#app.side-collapsed{grid-template-columns:0 1fr}
+.side{transition:padding .25s ease,opacity .2s ease}
+#app.side-collapsed .side{min-width:0;padding-left:0;padding-right:0;opacity:0;overflow:hidden;pointer-events:none}
+#sideToggleBtn{position:fixed;top:80px;left:10px;z-index:55;width:30px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:8px;background:var(--panel);border:1px solid var(--line);color:var(--txt-2);font-size:18px;font-weight:700;line-height:1;box-shadow:var(--shadow);transition:background .15s,color .15s,border-color .15s}
+#sideToggleBtn:hover{background:var(--panel-2);color:var(--brand-ink);border-color:var(--brand)}
+
 /* ---------- SHAXMATKA ---------- */
 .legend{display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
 .legend .lg{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--txt-2);font-weight:500}
@@ -570,6 +578,7 @@ table.data tr:hover td{background:var(--panel-2)}
 
 <!-- ============ APP ============ -->
 <div id="app" class="hidden">
+  <button id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Yon panelni yopish/ochish" aria-label="Yon panelni yopish/ochish">‹</button>
   <aside class="side">
     <div class="brand"><span class="dot"></span>THEONE<span style="color:#6ea8ff">PMS</span><br></div>
     <nav class="nav" id="nav"></nav>
@@ -6610,6 +6619,34 @@ function resetState(){
 
 /* Sahifa yopilganda — saqlab qolamiz */
 window.addEventListener('beforeunload',()=>{ if(SB&&savePending){ clearTimeout(saveTimer); savePending=false; cloudSave(); } });
+
+/* ===== Yon panelni yopish/ochish (MUSTAQIL MODUL — mavjud funksiyalarga tegilmagan) ===== */
+(function(){
+  var KEY='theone_sidebar_collapsed';
+  var OPEN='\u2039';    // ‹  (ochiq)
+  var CLOSED='\u203A';  // ›  (yopiq)
+  function apply(collapsed){
+    var app=document.getElementById('app');
+    var btn=document.getElementById('sideToggleBtn');
+    if(!app) return;
+    app.classList.toggle('side-collapsed', collapsed);
+    if(btn) btn.textContent = collapsed ? CLOSED : OPEN;
+  }
+  window.toggleSidebar=function(){
+    var app=document.getElementById('app');
+    if(!app) return;
+    var collapsed = !app.classList.contains('side-collapsed');
+    try{ localStorage.setItem(KEY, collapsed ? '1' : '0'); }catch(e){}
+    apply(collapsed);
+  };
+  function init(){
+    var saved='0';
+    try{ saved = localStorage.getItem(KEY) || '0'; }catch(e){}
+    apply(saved==='1');
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
 </script>
 </body>
 </html>
