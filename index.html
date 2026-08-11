@@ -5197,7 +5197,8 @@ function metrics(){
   const refunds=stays.reduce((a,s)=>a+s.payments.filter(p=>p.type==='ref').reduce((x,p)=>x+p.amount,0),0);
   const cash=stays.reduce((a,s)=>a+s.payments.filter(p=>p.type==='pay'&&p.method==='naxt').reduce((x,p)=>x+p.amount,0),0);
   const card=paid-cash;
-  const debtStays=stays.filter(s=>balance(s)>0&&s.status!=='out'&&s.status!=='canceled');
+  // 🔧 Qarz — Qarzdorlik ro'yxati bilan BIR XIL sanalsin: chiqib ketgan (out) qarzdor ham hisobga olinadi.
+  const debtStays=stays.filter(s=>balance(s)>0&&s.status!=='canceled');
   const debt=debtStays.reduce((a,s)=>a+balance(s),0);
   const arrivals=stays.filter(s=>s.status==='book' && stripTime(s.inDate).getTime()===base.getTime());
   const departures=stays.filter(s=>(s.status==='in') && stripTime(s.outDate).getTime()===base.getTime());
@@ -5481,7 +5482,8 @@ function renderTolov(){
   inRange.filter(p=>p.type==='pay'&&p.method==='karta').forEach(p=>{ const c=p.card||'Karta'; cardTypes[c]=(cardTypes[c]||0)+p.amount; });
   const refunds=inRange.filter(p=>p.type==='ref').reduce((a,p)=>a+p.amount,0);
   const net=cash+card-refunds;
-  const debtStays=stays.filter(s=>balance(s)>0&&s.status!=='out'&&s.status!=='canceled');
+  // 🔧 Qarz — Qarzdorlik ro'yxati bilan BIR XIL sanalsin: chiqib ketgan (out) qarzdor ham hisobga olinadi.
+  const debtStays=stays.filter(s=>balance(s)>0&&s.status!=='canceled');
   const debt=debtStays.reduce((a,s)=>a+balance(s),0);
 
   const shown=inRange.slice().reverse().filter(p=> payFilter==='all' || (payFilter==='naxt'&&p.method==='naxt'&&p.type==='pay')
@@ -6199,7 +6201,7 @@ async function sendAuditToTelegram(dayStr){
     const kelgan=stays.filter(s=>stripTime(s.inDate).getTime()===dayMs).length;
     const ketgan=stays.filter(s=>s.status==='out'&&stripTime(s.checkoutDate||s.outDate).getTime()===dayMs).length;
     const band=stays.filter(s=>s.status==='in').length;
-    const qarz=stays.filter(s=>balance(s)>0).reduce((a,s)=>a+balance(s),0);
+    const qarz=stays.filter(s=>balance(s)>0&&s.status!=='canceled').reduce((a,s)=>a+balance(s),0);
 
     // ── admin nazorati: o'sha kungi sezgir amallar ──
     const tKey=a=>{ const m=/(\d{1,2}):(\d{2})/.exec(a.time||''); return m?(+m[1]*60+ +m[2]):0; };
