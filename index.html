@@ -4077,6 +4077,12 @@ function commitAction(){
   const R=a.reason?` · Sabab: ${a.reason}`:'';
   if(a.kind==='pay'){
     const amt=+a.amount; if(!amt){toast('Summani kiriting.',false);return;}
+    // 💰 ORTIQCHA TO'LOV OGOHLANTIRISHI — qarzdan ko'p bo'lsa tasdiqlaydi (bloklamaydi).
+    const due=balance(s);
+    if(amt>due){
+      const ortiq=amt-Math.max(0,due);
+      if(!confirm("⚠️ To'lov qarzdan ko'p.\n\nQarz: "+money(Math.max(0,due))+"\nKiritilyapti: "+money(amt)+"\nOrtiqcha: "+money(ortiq)+"\n\nBaribir qo'shasizmi?")) return;
+    }
     s.payments.push({amount:amt,method:a.method,card:a.method==='karta'?a.card:'',type:'pay',time:stamp,ts:new Date(base),by:role==='admin'?'Admin':'Menejer'});
     folioSync('pay',{stay_id:s.id,amount:amt,method:a.method,card:a.method==='karta'?(a.card||''):''});
     if(s.status==='in')logAction(s,'money',`Check-in'dan keyin to'lov (${a.method==='karta'?a.card:'naxt'})`,amt);
@@ -4337,7 +4343,7 @@ function openInvoice(id){
     <div class="modal-b" id="invPrint">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--ink);padding-bottom:12px;margin-bottom:14px">
         <div><div style="font-family:'Space Grotesk';font-weight:700;font-size:18px">${hotelCfg.name}</div>
-          <div style="font-size:12px;color:var(--txt-2)">Chirchiq sh. · +998 71 200 00 00</div></div>
+          ${(hotelCfg.address||hotelCfg.phone)?`<div style="font-size:12px;color:var(--txt-2)">${[esc(hotelCfg.address||''),esc(hotelCfg.phone||'')].filter(Boolean).join(' · ')}</div>`:''}</div>
         <div style="text-align:right;font-size:12px;color:var(--txt-2)">${inv}<br>${fmt(base)}</div>
       </div>
       <div class="folio-meta" style="margin:0 0 14px">
@@ -5937,7 +5943,10 @@ function renderSettings(){
     <div class="panel"><div class="panel-h"><h3>${t('kompaniya')}</h3></div>
       <div class="panel-b" style="padding:18px 20px">
         <div class="field"><label>${t('hotelnomi')}</label><input value="${hotelCfg.name}" disabled style="opacity:.7;cursor:not-allowed"></div>
-        <div class="mini-hint" style="padding:0">🔒 Nom operator panelida belgilanadi — bu yerdan o'zgartirib bo'lmaydi.</div>
+        <div class="mini-hint" style="padding:0 0 12px">🔒 Nom operator panelida belgilanadi — bu yerdan o'zgartirib bo'lmaydi.</div>
+        <div class="field"><label>Manzil (invoyzda chiqadi)</label><input value="${esc(hotelCfg.address||'')}" ${role==='owner'?'disabled':''} placeholder="Masalan: Toshkent sh., Amir Temur ko'chasi 15" onchange="setHotelInfo('address',this.value)"></div>
+        <div class="field"><label>Telefon (invoyzda chiqadi)</label><input value="${esc(hotelCfg.phone||'')}" ${role==='owner'?'disabled':''} placeholder="Masalan: +998 90 123 45 67" onchange="setHotelInfo('phone',this.value)"></div>
+        <div class="mini-hint" style="padding:0">Manzil va telefon — mehmonga beriladigan invoyz (hisob-faktura) shapkasida ko'rinadi. Har hotel o'zinikini yozadi.</div>
       </div></div>
 
     <div class="panel"><div class="panel-h"><h3>${P("Shaxmatka ranglari")}</h3><span class="roleonly">Qat'iy belgilangan</span></div>
@@ -5994,6 +6003,12 @@ function renderSettings(){
 let hkShowFree=false, hkDate='';
 function toggleFree(){hkShowFree=!hkShowFree;render();}
 function setHkDate(v){hkDate=v;render();}
+function setHotelInfo(field,val){
+  if(role==='owner'){ toast('Owner (egasi) faqat ko\'radi.',false); return; }
+  hotelCfg[field]=(val||'').trim();
+  if(typeof cloudSave==='function') cloudSave();
+  toast('Saqlandi ✓ — invoyzda ko\'rinadi',true);
+}
 function renderHousekeeping(){
   const sel=hkDate||ymd(base);
   const selD=new Date(sel.split('-')[0],+sel.split('-')[1]-1,+sel.split('-')[2]); selD.setHours(0,0,0,0);
