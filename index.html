@@ -2757,7 +2757,6 @@ function renderGanttShell(headCols, rowsHtml, days, ND){
     <div class="lg"><span class="sw" style="background:linear-gradient(90deg,${statusColors.paid} 50%,${statusColors.partial} 50%)"></span>Qisman</div>
     <div class="lg"><span class="sw" style="background:${statusColors.out}"></span>Check-out</div>
     <div class="lg"><span class="sw" style="background:${statusColors.outdebt}"></span>Check-out (qarzli)</div>
-    <div class="lg"><span class="sw" style="background:${statusColors.cancel}"></span>Bekor</div>
     <div class="lg"><span class="sw" style="background:repeating-linear-gradient(45deg,#7b4a2d,#7b4a2d 4px,#8d5836 4px,#8d5836 8px)"></span>🔧 Ta'mirda</div>
     <div class="lg" style="margin-left:auto;color:var(--txt-3)"><b>Ctrl+bosish</b> → guruh bron yoki guruh atmen</div>
     <div class="seg" style="margin-left:10px" title="Shaxmatkada nechta kun ko'rinsin">
@@ -3206,7 +3205,7 @@ function openFolio(id,keepEdit){
     if(can('extend',s))   bItems.push(['doExtend','📅 Muddatni cho\'zish']);
     if(can('moveRoom',s)) bItems.push(['doMoveRoom','↔ Xona ko\'chirish']);
     if(bItems.length) actBtns+=gGroup('↔','Xona / sana',bItems);
-    actBtns+=gbtn('openInvoice','🧾 '+t('invoice'))+gbtn('doCancel','✕ Bekor qilish','danger');
+    actBtns+=gbtn('openInvoice','🧾 '+t('invoice'))+gbtn('doCancel','🗑 Bronni o\'chirish','danger');
   } else if(s.status==='in'){
     actBtns+=gbtn('doCheckout','🚪 Check-out','primary');
     if(can('price',s)) actBtns+=gbtn('doMovePrice','💰 Narxni o\'zgartirish'+(isZeroPriceStay(s)?' ⚠️':''), isZeroPriceStay(s)?'warn':'');
@@ -3217,7 +3216,7 @@ function openFolio(id,keepEdit){
     if(can('moveRoom',s)) rItems.push(['doMoveRoom','↔ Xona ko\'chirish']);
     if(can('extend',s))   rItems.push(['doExtend','📅 Muddatni cho\'zish']);
     if(rItems.length) actBtns+=gGroup('↔','Xona',rItems);
-    actBtns+=gbtn('openInvoice','🧾 '+t('invoice'))+gbtn('doCancel','✕ Xato — check-out (narx 0)','danger');
+    actBtns+=gbtn('openInvoice','🧾 '+t('invoice'));
   } else { // out (check-out qilingan)
     const coToday=checkoutIsToday(s);
     // ♻ VASTANAVIT — faqat BUGUN chiqqan bronga · admin ham, menejer ham
@@ -4171,42 +4170,20 @@ function commitAction(){
     logAction(s,'money',`Xizmat qo'shildi: ${a.name}`,amt);
     toast('Xizmat hisobga qo\'shildi ✓ (pul emas — qarzga qo\'shildi)',true);
   } else if(a.kind==='cancel'){
-    /* To'langan va qaytarilgan summani hisoblaymiz */
+    /* SODDA O'CHIRISH — faqat KELMAGAN bron (book) + PUL YO'Q → butunlay o'chadi (yo'qoladi).
+       Check-in bo'lgan bronda bu tugma umuman chiqmaydi. */
     const paid=(s.payments||[]).filter(p=>p.type==='pay').reduce((x,p)=>x+p.amount,0);
-    const refunded=(s.payments||[]).filter(p=>p.type==='ref').reduce((x,p)=>x+p.amount,0);
-    const netPaid=paid-refunded;   // hali qaytarilmagan pul
-    /* Pul bor va HALI QAYTARILMAGAN bo'lsa - avval VOZVRAT qilish kerak */
-    if(netPaid>0){
-      toast(`Bu bronda ${money(netPaid)} qaytarilmagan to'lov bor - avval menejer VOZVRAT qilsin.`,false);
-      return;
+    if(s.status!=='book'){
+      toast("Faqat check-in qilinmagan bronni o'chirish mumkin.",false); return;
     }
-    /* ═══ YANGI MANTIQ — HECH NARSA O'CHMAYDI, HAMMASI KO'RINADI ═══
-       (1) KELMAGAN bron (book, check-in bo'lmagan) → KULRANG (bekor) bo'ladi.
-           Hona bo'shaydi, kulrang iz bir liniyada qoladi.
-       (2) CHECK-IN bo'lgan + pul YO'Q → CHECK-OUT + narx 0 (QIZIL, qarzdor kabi).
-       (3) Pul bo'lgan (vozvrat qilib 0'lagan) → CHECK-OUT + 0 + SHUBHALIGA yoziladi. */
-    if(s.status==='book'){
-      /* (1) Kelmagan bron → kulrang bekor. O'chmaydi, ko'rinadi. */
-      s.status='canceled';
-      s.canceledReason=a.reason; s.canceledAt=stamp; s.canceledBy=(role==='admin'?'Admin':'Menejer');
-      logAction(s,'refund',"BRON BEKOR QILINDI (mehmon kelmagan - check-in bo'lmagan, pul yo'q)",0,a.reason);
-      toast("Bron bekor qilindi - kulrang bo'lib qoldi, hona bo'shadi 🟣",true);
-      closeAction(); closeFolio(); render(); return;
-    }
-    /* (2)/(3) Check-in bo'lgan bron → o'chmaydi, CHECK-OUT + narx 0 qilinadi */
-    s.zeroFlag=true;                 // abadiy QIZIL belgi (0-lik, iz o'chmaydi)
-    s.price=0; s.rates=Array(nights(s)).fill(0);
-    s.status='out';
-    s.checkoutDate=base;
     if(paid>0){
-      /* Pul kiritilgan edi (keyin vozvrat qilib 0'langan) → SHUBHALIGA */
-      logAction(s,'refund',`PUL QAYTARILDI va NARXI 0 - check-out qilindi (to'langan ${money(paid)} qaytarilgan edi)`,0,a.reason);
-      toast("Check-out (narx 0) - pul harakati bo'lgani uchun SHUBHALI amallarga yozildi 🔴",true);
-    } else {
-      /* Pul umuman kiritilmagan → oddiy xato tuzatish, admin nazoratga */
-      logAction(s,'refund',"NARXI 0 - check-in xato bo'lgan, pul yo'q, check-out qilindi",0,a.reason);
-      toast("Check-out (narx 0) - qizil bo'lib qoldi, admin nazoratiga yozildi 🔴",true);
+      toast(`Bu bronda ${money(paid)} to'lov bor - o'chirib bo'lmaydi.`,false); return;
     }
+    /* Kelmagan, pul yo'q → butunlay o'chadi. Admin nazoratga yoziladi. */
+    logAction(s,'refund',"Bron o'chirildi (mehmon kelmagan - check-in bo'lmagan, pul yo'q)",0,a.reason);
+    deletedLocally.add(s.id);
+    stays=stays.filter(x=>x.id!==s.id);
+    toast("Bron o'chirildi ✓",true);
     closeAction(); closeFolio(); render(); return;
   } else if(a.kind==='uncancel'){
     /* ♻ BEKOR QILISHNI QAYTARISH — faqat menejer */
