@@ -2109,7 +2109,7 @@ function typeLabel(k){return (TYPE_LABELS[LANG]&&TYPE_LABELS[LANG][k])||TYPE_LAB
 /* har bir tur uchun standart 1 kunlik tarif (hotel sozlamada o'zgartiradi) */
 let typeRates={std:400000,twin:500000,dlx:700000,lux:1200000};
 /* holat ranglari — hotel sozlamalarda o'zi tanlaydi */
-let statusColors={book:'#e0900e',in:'#38a8e0',paid:'#188a4a',partial:'#2563eb',out:'#2b3446',cancel:'#6d28d9',outdebt:'#dc2626',blocked:'#7b4a2d'};
+let statusColors={book:'#e0900e',in:'#38a8e0',paid:'#188a4a',partial:'#2563eb',out:'#2b3446',cancel:'#9ca3af',outdebt:'#dc2626',blocked:'#7b4a2d'};
 /* ═══════ SMENA YOPISH — naqd sanash + terminal solishtiruvi ═══════
    Faqat SOLISHTIRADI. To'lovlarga, balansga, kassa hisobotiga TEGMAYDI. */
 let shifts=[];        // {id, day, cashExpect, cashReal, cardExpect, cardReal, by, at, note}
@@ -2668,6 +2668,10 @@ function renderGanttRows(){
         let Rc=coIdx+coFrac;
         if(Rc<=Lc) Rc=Lc+0.2;                 // minimal ko'rinadigan kenglik
         geo.push({s, L:Lc, R:Rc, du:false});
+      } else if(s.status==='canceled'){
+        /* BEKOR bron — CHO'ZILMAYDI, faqat kelgan kunida kichik kulrang iz.
+           Hona bo'sh hisoblanadi, yangi bronga xalaqit bermaydi. */
+        geo.push({s, L:dayIdx+startInset, R:dayIdx+0.9, du:false});
       } else {
         geo.push({s, L:dayIdx-earlyF+startInset, R:dayIdx+span+coF+lateF, du});
       }
@@ -2728,8 +2732,8 @@ function renderGanttRows(){
       const corr=s.corrected?'<span class="corrbadge" title="Tuzatilgan (tamirlangan)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="16" r="3.2"/><path d="M10.3 13.7L19 5M16 5h3v3"/></svg></span>':'';
       const dun=du?` · ${s.arrTime}-${outTimeOf(s)}`:'';
       const cancl=s.status==='canceled';
-      const bh=cancl?Math.round((LANE-5)/2):(LANE-5);
-      const btop=s._lane*LANE+3+(cancl?Math.round((LANE-5)/2)-2:0);
+      const bh=(LANE-5);
+      const btop=s._lane*LANE+3;
       const narrow=(R-L)<0.55;                  // juda ingichka bo'lsa — faqat familiya
       const label=cancl?`✕ ${esc(s.firstName)} ${s.lastName.charAt(0)}.`
         : (narrow?`${esc(s.lastName)}` : `${esc(s.firstName)} ${s.lastName.charAt(0)}.<small> ${(s.price/1000).toFixed(0)}k</small>`);
@@ -5743,7 +5747,7 @@ async function autoRate(){
 function tryAutoRate(){ if(typeof fetch==='function') autoRate(); }
 function setTypeRate(k,v){typeRates[k]=+v||0;}
 function setStatusColor(k,c){statusColors[k]=c;render();}
-function resetColors(){statusColors={book:'#e0900e',in:'#d32f2f',paid:'#188a4a',partial:'#e0900e',out:'#2b3446',cancel:'#6d28d9',outdebt:''};render();toast('Ranglar standartga qaytarildi',true);}
+function resetColors(){statusColors={book:'#e0900e',in:'#d32f2f',paid:'#188a4a',partial:'#e0900e',out:'#2b3446',cancel:'#9ca3af',outdebt:''};render();toast('Ranglar standartga qaytarildi',true);}
 function colorRow(key,label){
   const cur=key==='outdebt'?(statusColors.outdebt||OUTDEBT_DEFAULT):statusColors[key];
   const swatches=COLOR_PALETTE.map(c=>`<button onclick="setStatusColor('${key}','${c}')" title="${c}" style="width:24px;height:24px;border-radius:6px;background:${c};border:2px solid ${statusColors[key]===c?'var(--ink)':'transparent'};cursor:pointer;outline:1px solid rgba(0,0,0,.08)"></button>`).join('');
