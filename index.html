@@ -2572,8 +2572,10 @@ function laneFor(room){
     laneEnds[0]=0;
   });
   const usedLanes=Math.max(duLanes, laneEnds.length?1:0);
-  canceled.forEach(s=>{ s._lane=usedLanes; });
-  return {list:active.concat(canceled),lanes:Math.max(1,usedLanes+(canceled.length?1:0))};
+  /* Bekor/xato (canceled) bron PASTGA TUSHMAYDI — hammasi bilan BIR LINIYADA (lane 0),
+     faqat rangi kulrang. Yonma-yon joy 3-bosqichda bo'linadi. */
+  canceled.forEach(s=>{ s._lane=0; });
+  return {list:active.concat(canceled),lanes:Math.max(1,usedLanes)};
 }
 /* 0 narxli bron — check-out'dan keyin ABADIY qizil (shubhali belgi, iz o'chmaydi) */
 function isZeroPriceStay(s){
@@ -3211,7 +3213,7 @@ function openFolio(id,keepEdit){
     if(can('moveRoom',s)) rItems.push(['doMoveRoom','↔ Xona ko\'chirish']);
     if(can('extend',s))   rItems.push(['doExtend','📅 Muddatni cho\'zish']);
     if(rItems.length) actBtns+=gGroup('↔','Xona',rItems);
-    actBtns+=gbtn('openInvoice','🧾 '+t('invoice'))+gbtn('doCancel','✕ Bekor qilish','danger');
+    actBtns+=gbtn('openInvoice','🧾 '+t('invoice'))+gbtn('doCancel','✕ Xato — check-out (narx 0)','danger');
   } else { // out (check-out qilingan)
     const coToday=checkoutIsToday(s);
     // ♻ VASTANAVIT — faqat BUGUN chiqqan bronga · admin ham, menejer ham
@@ -4169,24 +4171,38 @@ function commitAction(){
     const paid=(s.payments||[]).filter(p=>p.type==='pay').reduce((x,p)=>x+p.amount,0);
     const refunded=(s.payments||[]).filter(p=>p.type==='ref').reduce((x,p)=>x+p.amount,0);
     const netPaid=paid-refunded;   // hali qaytarilmagan pul
-    /* Pul bor va HALI QAYTARILMAGAN bo'lsa - bekor qilib bo'lmaydi (avval vozvrat) */
+    /* Pul bor va HALI QAYTARILMAGAN bo'lsa - avval VOZVRAT qilish kerak */
     if(netPaid>0){
-      toast(`Bu bronda ${money(netPaid)} qaytarilmagan to'lov bor - bekor qilib bo'lmaydi. Avval menejer VOZVRAT qilsin.`,false);
+      toast(`Bu bronda ${money(netPaid)} qaytarilmagan to'lov bor - avval menejer VOZVRAT qilsin.`,false);
       return;
     }
-    /* Bu yergacha yetdi = yo pul umuman yo'q, yo hammasi qaytarilgan.
-       Ikkala holatda ham shaxmatkada IZ QOLMAYDI - toza o'chadi.
-       Lekin admin nazorat jurnaliga HAMMASI to'liq yoziladi. */
-    if(paid>0){
-      logAction(s,'refund',`BRON BEKOR QILINDI - to'langan ${money(paid)} to'liq qaytarilgan edi, izsiz o'chirildi`,0,a.reason);
-    } else if(s.status==='book'){
-      logAction(s,'refund',"Bron o'chirildi (mehmon kelmagan - check-in bo'lmagan, pul yo'q)",0,a.reason);
-    } else {
-      logAction(s,'refund',"Bron o'chirildi (check-in bo'lgan, lekin to'lov kiritilmagan)",0,a.reason);
+    /* ═══ YANGI MANTIQ — HECH NARSA O'CHMAYDI, HAMMASI KO'RINADI ═══
+       (1) KELMAGAN bron (book, check-in bo'lmagan) → KULRANG (bekor) bo'ladi.
+           Hona bo'shaydi, kulrang iz bir liniyada qoladi.
+       (2) CHECK-IN bo'lgan + pul YO'Q → CHECK-OUT + narx 0 (QIZIL, qarzdor kabi).
+       (3) Pul bo'lgan (vozvrat qilib 0'lagan) → CHECK-OUT + 0 + SHUBHALIGA yoziladi. */
+    if(s.status==='book'){
+      /* (1) Kelmagan bron → kulrang bekor. O'chmaydi, ko'rinadi. */
+      s.status='canceled';
+      s.canceledReason=a.reason; s.canceledAt=stamp; s.canceledBy=(role==='admin'?'Admin':'Menejer');
+      logAction(s,'refund',"BRON BEKOR QILINDI (mehmon kelmagan - check-in bo'lmagan, pul yo'q)",0,a.reason);
+      toast("Bron bekor qilindi - kulrang bo'lib qoldi, hona bo'shadi 🟣",true);
+      closeAction(); closeFolio(); render(); return;
     }
-    deletedLocally.add(s.id);
-    stays=stays.filter(x=>x.id!==s.id);
-    toast("Bron o'chirildi - shaxmatkada iz qolmadi ✓",true);
+    /* (2)/(3) Check-in bo'lgan bron → o'chmaydi, CHECK-OUT + narx 0 qilinadi */
+    s.zeroFlag=true;                 // abadiy QIZIL belgi (0-lik, iz o'chmaydi)
+    s.price=0; s.rates=Array(nights(s)).fill(0);
+    s.status='out';
+    s.checkoutDate=base;
+    if(paid>0){
+      /* Pul kiritilgan edi (keyin vozvrat qilib 0'langan) → SHUBHALIGA */
+      logAction(s,'refund',`PUL QAYTARILDI va NARXI 0 - check-out qilindi (to'langan ${money(paid)} qaytarilgan edi)`,0,a.reason);
+      toast("Check-out (narx 0) - pul harakati bo'lgani uchun SHUBHALI amallarga yozildi 🔴",true);
+    } else {
+      /* Pul umuman kiritilmagan → oddiy xato tuzatish, admin nazoratga */
+      logAction(s,'refund',"NARXI 0 - check-in xato bo'lgan, pul yo'q, check-out qilindi",0,a.reason);
+      toast("Check-out (narx 0) - qizil bo'lib qoldi, admin nazoratiga yozildi 🔴",true);
+    }
     closeAction(); closeFolio(); render(); return;
   } else if(a.kind==='uncancel'){
     /* ♻ BEKOR QILISHNI QAYTARISH — faqat menejer */
