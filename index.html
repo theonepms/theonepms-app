@@ -971,15 +971,15 @@ async function afterLogin(r){
   // ⚠️ cloudLoad eski sozlamadagi nomni tiklab yuborishi mumkin — nom baza bo'yicha qat'iy
   if(myHotelName) hotelCfg.name=myHotelName;
   setHotelPill();
-  try{ await tgCheck(); }catch(e){}
+  try{ await tgCheck(); }catch(e){console.error(e)}
   enterApp(r);
   startCloudSync();           // boshqa admin o'zgartirsa — ko'rinadi
   if(btn){btn.disabled=false;btn.textContent='Kirish';}
 }
 async function doLogout(){
   if(!confirm('Tizimdan chiqasizmi?'))return;
-  try{ await cloudSave(); }catch(e){}
-  try{ if(SB) await SB.auth.signOut(); }catch(e){}
+  try{ await cloudSave(); }catch(e){console.error(e)}
+  try{ if(SB) await SB.auth.signOut(); }catch(e){console.error(e)}
   location.reload();
 }
 function backToStep1(){ clearInterval(mfaTimer); document.getElementById('loginStep2').classList.add('hidden'); document.getElementById('loginStep1').classList.remove('hidden'); }
@@ -1075,7 +1075,7 @@ async function mfaVerify(){
   // ⚠️ Qayta tekshirish: faqat HAQIQIY menejer o'ta oladi (rol bazadan)
   if(!pendingUser || (verifiedRole||roleOfEmail(pendingUser.email))!=='manager'){
     toast("Bu akkaunt menejer emas. Kirish rad etildi.",false);
-    try{ if(SB) await SB.auth.signOut(); }catch(e){}
+    try{ if(SB) await SB.auth.signOut(); }catch(e){console.error(e)}
     pendingUser=null; clearInterval(mfaTimer); backToStep1();
     return;
   }
@@ -1146,7 +1146,7 @@ async function pickHotel(id,name){
   document.getElementById('pickHotelOv')?.remove();
   if(id===HOTEL_ID){ toast(`${name} — ochildi ✓`,true); return; }
   const h=allHotels.find(x=>x.id===id)||{};
-  try{ await cloudSave(); }catch(e){}
+  try{ await cloudSave(); }catch(e){console.error(e)}
   HOTEL_ID=id; myHotel=id; myHotelName=name;
   myHotelStart=(allHotels.find(x=>x.id===id)||{}).start_date||null;
   stays=[]; auditLog=[]; roomBlocks=[]; shifts=[]; pendingBookings=[]; emArchive={};
@@ -2018,7 +2018,7 @@ function applyLang(root){
         const v=trText(el.dataset.uzTi); if(el.getAttribute('title')!==v) el.setAttribute('title',v);
       }
     }
-  }catch(e){}
+  }catch(e){console.error(e)}
   __trBusy=false;
 }
 
@@ -2074,14 +2074,14 @@ function showPayReminder(){
     </div>`;
   document.body.appendChild(d);
   document.getElementById('payWarnOk').onclick=()=>{
-    try{ sessionStorage.setItem(key,'1'); }catch(e){}
+    try{ sessionStorage.setItem(key,'1'); }catch(e){console.error(e)}
     d.remove();
   };
 }
 function setLang(l){LANG=l;buildNav();render();applyLang(document.body);}
 /* ===== MATN HAJMI (har xodim o'z kompyuterida tanlaydi) ===== */
 let UI_SCALE='md';
-try{ UI_SCALE=localStorage.getItem('theonepms_scale')||'md'; }catch(e){}
+try{ UI_SCALE=localStorage.getItem('theonepms_scale')||'md'; }catch(e){console.error(e)}
 function applyScale(){
   const px={sm:13.5,md:15,lg:17}[UI_SCALE]||15;
   document.documentElement.style.setProperty('--ui-scale',px+'px');
@@ -2089,7 +2089,7 @@ function applyScale(){
 }
 function setScale(v){
   UI_SCALE=v;
-  try{ localStorage.setItem('theonepms_scale',v); }catch(e){}
+  try{ localStorage.setItem('theonepms_scale',v); }catch(e){console.error(e)}
   applyScale(); render();
   toast('Matn hajmi: '+({sm:'Kichik',md:"O'rta",lg:'Katta'})[v]+' ✓',true);
 }
@@ -2432,7 +2432,7 @@ function buildNav(){
   if(isSuper) items=NAV_SUPER.concat(items);
   const openCount=auditLog.filter(a=>(a.day||ymd(base))===ymd(base)).length;
   let shubhaCount=0;
-  try{ if(role==='manager'||role==='owner'){ const today=ymd(base); shubhaCount=auditLog.filter(a=>{const t=a.text||'';return (a.day||today)===today && (/PUL QAYTARILDI/i.test(t)||/IZMENIT/i.test(t));}).length; } }catch(e){}
+  try{ if(role==='manager'||role==='owner'){ const today=ymd(base); shubhaCount=auditLog.filter(a=>{const t=a.text||'';return (a.day||today)===today && (/PUL QAYTARILDI/i.test(t)||/IZMENIT/i.test(t));}).length; } }catch(e){console.error(e)}
   document.getElementById('nav').innerHTML=items.map(it=>{
     if(it.s) return `<div class="navsec">${t(it.s)}</div>`;
     const b=it.badge&&openCount?`<span class="badge">${openCount}</span>`
@@ -2467,7 +2467,7 @@ function render(){
       const m2=document.querySelector('main')||document.querySelector('.main');
       if(m2&&_mainTop) m2.scrollTop=_mainTop;
       if(_winY) window.scrollTo(0,_winY);
-    }catch(e){}
+    }catch(e){console.error(e)}
   };
   setHotelPill();
   if(page==='hotellar') v.innerHTML=renderHotels();
@@ -2501,7 +2501,7 @@ function gotoDate(val){ if(!val)return; const p=val.split('-'); ganttStart=new D
 let GANTT_DAYS = (function(){ const v=+(localStorage.getItem('gdays')||7); return [7,12,21].includes(v)?v:7; })();
 function setGanttDays(n){
   GANTT_DAYS=[7,12,21].includes(+n)?+n:7;
-  try{ localStorage.setItem('gdays',GANTT_DAYS); }catch(e){}
+  try{ localStorage.setItem('gdays',GANTT_DAYS); }catch(e){console.error(e)}
   render();
 }
 function ganttDays(){ const arr=[]; for(let i=0;i<GANTT_DAYS;i++) arr.push(new Date(ganttStart.getTime()+i*DAY)); return arr; }
@@ -3176,7 +3176,7 @@ function openFolio(id,keepEdit){
   }
   const bal=balance(s), paid=paidSum(s);
   const statusTag=s.status==='book'?'<span class="tag book">'+P('Bron')+'</span>':s.status==='in'?'<span class="tag in">'+P('Yashamoqda')+'</span>':s.status==='canceled'?'<span class="tag" style="background:#efe9fe;color:#6d28d9">'+P('Bekor qilingan')+'</span>':'<span class="tag out">'+P('Chiqib ketgan')+'</span>';
-  const txns=s.payments.map(p=>`
+  const txns=(s.payments||[]).map(p=>`
     <div class="txn">
       <div class="ic ${p.type==='ref'?'ref':'pay'}">${p.type==='ref'?'↩':'₸'}</div>
       <div class="desc"><b>${p.type==='ref'?'Qaytarish (vozvrat)':'To\'lov'} · ${money(p.amount)}</b>
@@ -4591,8 +4591,7 @@ function renderChannel(){
     <div class="stat accent a-amber"><div class="l">Kutayotgan bronlar</div><div class="v">${pendingBookings.length}</div><div class="d">qabul kutmoqda</div></div>
     <div class="stat accent a-green"><div class="l">Sinxronlash</div><div class="v" style="font-size:18px">Avtomatik</div><div class="d up">real vaqtda</div></div>
   </div>
-  <div class="panel"><div class="panel-h"><h3>${P("Ulangan kanallar")}</h3><span class="spacer"></span>
-    <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px" onclick="simulateNewBooking()">🔔 Yangi bron (test)</button></div>
+  <div class="panel"><div class="panel-h"><h3>${P("Ulangan kanallar")}</h3><span class="spacer"></span></div>
     <div class="panel-b" style="padding:14px 18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">${chCards}</div></div>
   <div class="panel"><div class="panel-h"><h3>${P("Kelgan online bronlar")}</h3><span class="spacer"></span><span class="pill">${pendingBookings.length} ta</span></div>
     <table class="data"><thead><tr><th>${P("Kanal")}</th><th>${P("Mehmon")}</th><th>${P("Xona turi")}</th><th>${P("Sana")}</th><th>${P("Narx")}</th><th>${P("Amal")}</th></tr></thead><tbody>${pend}</tbody></table></div>`;
@@ -5312,7 +5311,7 @@ function defaultRooms(count){
 async function switchHotel(id,name){
   if(!isSuper) return;
   if(!confirm(`"${name}" mehmonxonasiga o'tasizmi?\n\nJoriy ma'lumot saqlanadi, keyin yangisi yuklanadi.`)) return;
-  try{ await cloudSave(); }catch(e){}
+  try{ await cloudSave(); }catch(e){console.error(e)}
   const h=allHotels.find(x=>x.id===id)||{};
   HOTEL_ID=id; myHotel=id; myHotelName=name;
   myHotelStart=(allHotels.find(x=>x.id===id)||{}).start_date||null;
@@ -6585,7 +6584,7 @@ async function cloudSave(){
 /* --- Nazorat jurnali: serverга DARHOL yoziladi (o'chirib bo'lmaydi) --- */
 async function cloudLogPush(entry){
   if(!SB) return;
-  try{ await SB.from('audit_log').insert({hotel_id:HOTEL_ID,entry}); }catch(e){}
+  try{ await SB.from('audit_log').insert({hotel_id:HOTEL_ID,entry}); }catch(e){console.error(e)}
 }
 
 /* --- saveState(): faqat MA'LUMOT O'ZGARGANDA bulutga yozadi --- */
@@ -6618,11 +6617,11 @@ function startCloudSync(){
         const {data:h}=await SB.from('hotels').select('active,name').eq('id',HOTEL_ID).maybeSingle();
         if(h && h.active===false){
           clearInterval(syncTimer);
-          try{ await SB.auth.signOut(); }catch(e){}
+          try{ await SB.auth.signOut(); }catch(e){console.error(e)}
           showBlocked(h.name||'');
           return;
         }
-      }catch(e){}
+      }catch(e){console.error(e)}
     }
     // modal ochiq / saqlash kutilmoqda / band bo'lsa — tegmaymiz
     if(!SB||cloudBusy||savePending||document.getElementById('regOverlay')||document.getElementById('folioOverlay')||document.getElementById('actOverlay')) return;
@@ -6641,7 +6640,7 @@ function startCloudSync(){
         },30);
         toast('Boshqa xodim o\'zgarish kiritdi — yangilandi.',true);
       }
-    }catch(e){}
+    }catch(e){console.error(e)}
   },30000);
 }
 
@@ -6705,12 +6704,12 @@ window.addEventListener('beforeunload',()=>{ if(SB&&savePending){ clearTimeout(s
     var app=document.getElementById('app');
     if(!app) return;
     var collapsed = !app.classList.contains('side-collapsed');
-    try{ localStorage.setItem(KEY, collapsed ? '1' : '0'); }catch(e){}
+    try{ localStorage.setItem(KEY, collapsed ? '1' : '0'); }catch(e){console.error(e)}
     apply(collapsed);
   };
   function init(){
     var saved='0';
-    try{ saved = localStorage.getItem(KEY) || '0'; }catch(e){}
+    try{ saved = localStorage.getItem(KEY) || '0'; }catch(e){console.error(e)}
     apply(saved==='1');
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
