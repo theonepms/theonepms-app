@@ -3216,6 +3216,8 @@ function openFolio(id,keepEdit){
     if(can('moveRoom',s)) rItems.push(['doMoveRoom','↔ Xona ko\'chirish']);
     if(can('extend',s))   rItems.push(['doExtend','📅 Muddatni cho\'zish']);
     if(rItems.length) actBtns+=gGroup('↔','Xona',rItems);
+    /* ♻ BRONGA QAYTARISH — xato check-in'ni orqaga qaytaradi (joriy kun) */
+    if(can('moveRoom',s)) actBtns+=gbtn('doBackToBook','↩️ Bronga qaytarish','warn');
     actBtns+=gbtn('openInvoice','🧾 '+t('invoice'));
   } else { // out (check-out qilingan)
     const coToday=checkoutIsToday(s);
@@ -3414,6 +3416,36 @@ function doCheckin(id){
   const s=stays.find(x=>x.id===id); if(!s)return;
   s.status='in';
   closeFolio(); render(); toast('Check-in bajarildi ✓',true);
+}
+/* ♻ BRONGA QAYTARISH — xato check-in'ni orqaga (bron holatiga) qaytaradi.
+   • faqat joriy kun (admin + manager)
+   • PUL kiritilgan bo'lsa → to'sadi ("avval vozvrat qiling")
+   • pul yo'q → darrov bronga qaytadi, keyin brondan o'chirish mumkin
+   • hammasi admin nazoratiga; pul bo'lgan holat keyin vozvrat qilinsa — shubhaliga */
+function doBackToBook(id){
+  const s=stays.find(x=>x.id===id); if(!s)return;
+  if(!can('moveRoom',s)){ toast('Bu bron joriy kunga tegishli emas (o\'tgan kun qulflangan).',false); return; }
+  if(s.status!=='in'){ toast('Faqat check-in qilingan bronni bronga qaytarish mumkin.',false); return; }
+  const paid=(s.payments||[]).filter(p=>p.type==='pay').reduce((x,p)=>x+p.amount,0);
+  const refunded=(s.payments||[]).filter(p=>p.type==='ref').reduce((x,p)=>x+p.amount,0);
+  const net=paid-refunded;
+  if(net>0){
+    /* PUL bor va qaytarilmagan → to'samiz. Avval vozvrat kerak. */
+    toast(`Foliyada ${money(net)} pul kiritilgan — bronga qaytarib bo'lmaydi. Avval VOZVRAT qiling, keyin qaytaring.`,false);
+    return;
+  }
+  /* Pul yo'q (yoki hammasi qaytarilgan) → bronga qaytaramiz */
+  const hadRefund = refunded>0;   // pul kiritilib, keyin vozvrat qilinganmi?
+  s.status='book';
+  if(hadRefund){
+    /* Pul kiritilgan → vozvrat qilingan → bronga o'tkazildi = SHUBHALI */
+    logAction(s,'refund',`⚠️ SHUBHALI: Check-in BRONGA QAYTARILDI — oldin ${money(paid)} to'langan, ${money(refunded)} qaytarilgan edi. Pul harakati bo'lgan!`,0,'Bronga qaytarish (pul vozvrat qilingan)');
+    toast('Bronga qaytarildi \u26a0\ufe0f — pul harakati bo\'lgani uchun SHUBHALI amallarga yozildi 🔴',true);
+  } else {
+    logAction(s,'warn','Check-in BRONGA QAYTARILDI (xato check-in — pul kiritilmagan edi)',0,'Bronga qaytarish');
+    toast('Bronga qaytarildi ✓ — endi kerak bo\'lsa o\'chirishingiz mumkin',true);
+  }
+  closeFolio(); render();
 }
 /* ================= ADMIN HUQUQLARI (markaziy nazorat) =================
    Admin qila oladi: to'lov qabul, xizmat qo'shish, to'lanmagan xizmatni bekor,
@@ -6672,7 +6704,48 @@ function startCloudSync(){
         toast('Boshqa xodim o\'zgarish kiritdi — yangilandi.',true);
       }
     }catch(e){console.error(e)}
-  },30000);
+  },5000);   // ⚡ zaxira: 5 soniyada bir tekshiradi (realtime ishlamasa ham ishlaydi)
+  startRealtime();   // ⚡⚡ REALTIME — baza o'zgarishni DARROV signal qiladi (1 soniya)
+}
+
+/* ⚡⚡ SUPABASE REALTIME — stays/settings o'zgarsa, baza DARROV xabar beradi.
+   So'rab o'tirmaydi — o'zgarish bo'lgan zahoti (1 soniyada) yangilanadi. */
+let rtChannel=null, rtDebounce=null;
+function startRealtime(){
+  if(!SB || isSuper) return;
+  try{ if(rtChannel) SB.removeChannel(rtChannel); }catch(e){console.error(e)}
+  rtChannel = SB.channel('pms-'+HOTEL_ID)
+    .on('postgres_changes',
+      { event:'*', schema:'public', table:'stays', filter:'hotel_id=eq.'+HOTEL_ID },
+      ()=>rtRefresh())
+    .on('postgres_changes',
+      { event:'*', schema:'public', table:'settings', filter:'hotel_id=eq.'+HOTEL_ID },
+      ()=>rtRefresh())
+    .subscribe();
+}
+/* O'zgarish signali kelganda — biroz kutib (0.5s), keyin yangilaymiz.
+   Kutish sababi: o'zimiz saqlagan bo'lsak ikki marta yuklamaslik uchun. */
+function rtRefresh(){
+  clearTimeout(rtDebounce);
+  rtDebounce=setTimeout(async()=>{
+    // modal ochiq / o'zimiz saqlayapmiz / band bo'lsa — tegmaymiz
+    if(!SB||cloudBusy||savePending||document.getElementById('regOverlay')||document.getElementById('folioOverlay')||document.getElementById('actOverlay')) return;
+    try{
+      const {data:st}=await SB.from('settings').select('data').eq('hotel_id',HOTEL_ID).maybeSingle();
+      const srvAt=(st&&st.data&&st.data.savedAt)||0;
+      if(srvAt>lastSavedAt+2000){   // faqat BOSHQA kimdir o'zgartirgan bo'lsa
+        const gw=document.querySelector('.gantt-wrap');
+        const gTop=gw?gw.scrollTop:0, gLeft=gw?gw.scrollLeft:0, winY=window.scrollY||0;
+        await cloudLoad(); render();
+        setTimeout(()=>{
+          const gw2=document.querySelector('.gantt-wrap');
+          if(gw2){ gw2.scrollTop=gTop; gw2.scrollLeft=gLeft; }
+          window.scrollTo(0,winY);
+        },30);
+        toast('⚡ Boshqa xodim o\'zgarish kiritdi — yangilandi.',true);
+      }
+    }catch(e){console.error(e)}
+  },500);
 }
 
 /* ===== BIR MARTALIK TOZA START — hamma test o'chadi, 1 ta haqiqiy bron qoladi ===== */
