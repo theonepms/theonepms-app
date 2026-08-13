@@ -1182,9 +1182,9 @@ const T={
     xonaturlari:'Xona turlari va tariflar',xavfsizlik:'Xavfsizlik',smena:'Smena',
     bandlik:'Bandlik',kelishlar:'Kelishlar',chiqishlar:'Chiqishlar',bugunharakat:'Bugungi harakat',
     xonaholati:'Xonalar holati',bugunkut:'bugun kutilmoqda',bushta:"ta bo'sh",band:'Band',bushh:"Bo'sh",bron:'Bron',
-    naxtkassa:'Naxt kassa',kartajami:'Karta (jami)',vozvratlar:'Vozvratlar',softushum:'Sof tushum',umumiyqarz:'Umumiy qarz',
+    naxtkassa:'Naxt kassa',kartajami:'Karta (jami)',boshqatolov:'Boshqa (Payme/Click/Uzum)',vozvratlar:'Vozvratlar',softushum:'Sof tushum',umumiyqarz:'Umumiy qarz',
     davr:'Davr',bugun:'Bugun',checkin:'Check-in',checkout:'Check-out',yashamoqda:'Yashamoqda',chiqibketgan:'Chiqib ketgan',
-    tolovqosh:"To'lov qo'shish",bekorqil:'Bekor qilish',chopetish:'Chop etish',hammasi:'Hammasi',kartayoq:"Karta to'lovi yo'q",naxtkarta:'naxt + karta − vozvrat',tamehmon:'ta mehmon',bugtushum:'Bugungi tushum',
+    tolovqosh:"To'lov qo'shish",bekorqil:'Bekor qilish',chopetish:'Chop etish',hammasi:'Hammasi',kartayoq:"Karta to'lovi yo'q",naxtkarta:"naxt + karta + boshqa − vozvrat",tamehmon:'ta mehmon',bugtushum:'Bugungi tushum',
     wd:['Yak','Du','Se','Cho','Pay','Ju','Sha']},
   ru:{boshqaruv:'Управление',hisobot:'Отчёты',baza_s:'База',nazorat_s:'Контроль (только менеджер)',super_s:'СУПЕР-АДМИН',hotellar:'Отели',
     dashboard:'Рабочий стол',shaxmatka:'Шахматка',mehmonlar:'База гостей',kompaniyalar:'Компании',qarzdorlik:'Список должников',channel:'Channel Manager',fnb:'F&B (ресторан)',housekeeping:'Уборка',sozlamalar:'Настройки',
@@ -1198,9 +1198,9 @@ const T={
     xonaturlari:'Типы номеров и тарифы',xavfsizlik:'Безопасность',smena:'Смена',
     bandlik:'Занятость',kelishlar:'Заезды',chiqishlar:'Выезды',bugunharakat:'Активность сегодня',
     xonaholati:'Статус номеров',bugunkut:'ожидается сегодня',bushta:'свободно',band:'Занят',bushh:'Свободен',bron:'Бронь',
-    naxtkassa:'Наличные',kartajami:'Карта (всего)',vozvratlar:'Возвраты',softushum:'Чистый доход',umumiyqarz:'Общий долг',
+    naxtkassa:'Наличные',kartajami:'Карта (всего)',boshqatolov:'Другое (Payme/Click/Uzum)',vozvratlar:'Возвраты',softushum:'Чистый доход',umumiyqarz:'Общий долг',
     davr:'Период',bugun:'Сегодня',checkin:'Заезд',checkout:'Выезд',yashamoqda:'Проживает',chiqibketgan:'Выехал',
-    tolovqosh:'Добавить оплату',bekorqil:'Отменить',chopetish:'Печать',hammasi:'Все',kartayoq:'Нет оплат картой',naxtkarta:'нал + карта − возврат',tamehmon:'гостей',bugtushum:'Доход за сегодня',
+    tolovqosh:'Добавить оплату',bekorqil:'Отменить',chopetish:'Печать',hammasi:'Все',kartayoq:'Нет оплат картой',naxtkarta:'нал + карта + другое − возврат',tamehmon:'гостей',bugtushum:'Доход за сегодня',
     wd:['Вс','Пн','Вт','Ср','Чт','Пт','Сб']},
   en:{boshqaruv:'Operations',hisobot:'Reports',baza_s:'Database',nazorat_s:'Control (manager only)',super_s:'SUPER-ADMIN',hotellar:'Hotels',
     dashboard:'Dashboard',shaxmatka:'Room chart',mehmonlar:'Guest database',kompaniyalar:'Companies',qarzdorlik:'Debtors list',channel:'Channel Manager',fnb:'F&B (restaurant)',housekeeping:'Housekeeping',sozlamalar:'Settings',
@@ -1214,9 +1214,9 @@ const T={
     xonaturlari:'Room types & rates',xavfsizlik:'Security',smena:'Shift',
     bandlik:'Occupancy',kelishlar:'Arrivals',chiqishlar:'Departures',bugunharakat:"Today's activity",
     xonaholati:'Room status',bugunkut:'expected today',bushta:'free',band:'Occupied',bushh:'Free',bron:'Booked',
-    naxtkassa:'Cash',kartajami:'Card (total)',vozvratlar:'Refunds',softushum:'Net revenue',umumiyqarz:'Total debt',
+    naxtkassa:'Cash',kartajami:'Card (total)',boshqatolov:'Other (Payme/Click/Uzum)',vozvratlar:'Refunds',softushum:'Net revenue',umumiyqarz:'Total debt',
     davr:'Period',bugun:'Today',checkin:'Check-in',checkout:'Check-out',yashamoqda:'Staying',chiqibketgan:'Checked out',
-    tolovqosh:'Add payment',bekorqil:'Cancel',chopetish:'Print',hammasi:'All',kartayoq:'No card payments',naxtkarta:'cash + card − refund',tamehmon:'guests',bugtushum:"Today's revenue",
+    tolovqosh:'Add payment',bekorqil:'Cancel',chopetish:'Print',hammasi:'All',kartayoq:'No card payments',naxtkarta:'cash + card + other − refund',tamehmon:'guests',bugtushum:"Today's revenue",
     wd:['Sun','Mon','Tue','Wed','Thu','Fri','Sat']},
 };
 function t(k){return (T[LANG]&&T[LANG][k])||T.uz[k]||k;}
@@ -3148,6 +3148,16 @@ function saveReg(status){
     for(const room of r.rooms){
       const c=findClash(room, r.inDate, outD, null);
       if(c){ toast(clashMsg(c, room), false); return; }
+      // 🛡 KUNDUZGI (bir kunlik) SIG'IM CHEGARASI — shaxmatkada bitta kunda 3 tadan ortiq
+      // mehmon almashinuvi vizual jihatdan sig'may, keyingi kunga "sirg'alib" ketadi.
+      if(r.dayUse){
+        const sameDayCount=stays.filter(x=>x.room===room && x.status!=='canceled' && isDayUse(x)
+          && stripTime(x.inDate).getTime()===stripTime(r.inDate).getTime()).length;
+        if(sameDayCount>=3){
+          toast(`${room}-xona: bu kunda allaqachon 3 ta kunduzgi mehmon almashingan — shaxmatkada joy qolmadi. Boshqa xona yoki boshqa sana tanlang.`,false);
+          return;
+        }
+      }
     }
   }
   if(r.nightly===''||r.nightly===null||r.nightly===undefined||isNaN(+r.nightly)){toast('1 kunlik xona narxini kiriting (bepul bo\'lsa 0 yozing).',false);return;}
@@ -3241,8 +3251,9 @@ function openFolio(id,keepEdit){
     actBtns+=gbtn('openInvoice','🧾 '+t('invoice'));
   } else { // out (check-out qilingan)
     const coToday=checkoutIsToday(s);
-    // ♻ VASTANAVIT — faqat BUGUN chiqqan bronga · admin ham, menejer ham
-    if(coToday) actBtns+=gbtn('doRestore','♻ Qayta tiklash (vastanavit)','primary');
+    // ♻ VASTANAVIT — faqat BUGUN chiqqan VA shu xonada ENG OXIRGI chiqqan bronga · admin ham, menejer ham
+    // (undan keyin xonaga boshqa mehmon check-in qilingan bo'lsa — bu tugma umuman ko'rsatilmaydi)
+    if(coToday && isLastCheckoutToday(s)) actBtns+=gbtn('doRestore','♻ Qayta tiklash (vastanavit)','primary');
     if(role==='manager'){
       // ✏️ IZMENIT — faqat menejer · istalgan eski kunga · hamma maydon
       actBtns+=gbtn('openIzmenit','✏️ Izmenit (tuzatish)','warn');
@@ -3551,6 +3562,11 @@ function findClash(room, inD, outD, ignoreId){
     && stripTime(x.outDate).getTime() > A);
   if(clash) return {type:'stay', who:`${clash.firstName} ${clash.lastName}`,
                     from:clash.inDate, to:clash.outDate};
+  // 1.5) FAOL (hali check-out QILINMAGAN) mehmon — rejalashtirilgan chiqish sanasi
+  // yetib yoki o'tib ketgan bo'lsa ham, haqiqiy check-out bosilmaguncha xona band hisoblanadi.
+  const active=stays.find(x=> x.id!==ignoreId && x.room===room && x.status==='in'
+    && stripTime(x.outDate).getTime() <= A);
+  if(active) return {type:'active', who:`${active.firstName} ${active.lastName}`, to:active.outDate};
   // 2) yopilgan (ta'mir) xona bilan to'qnashuv
   if(typeof roomBlocks!=='undefined' && Array.isArray(roomBlocks)){
     const bd=roomBlocks.find(bk=>{
@@ -3567,6 +3583,7 @@ function findClash(room, inD, outD, ignoreId){
 function clashMsg(c, room){
   if(!c) return '';
   if(c.type==='block') return `Xona ${room} bu kunlarda YOPIQ (${c.reason}). Boshqa xona tanlang.`;
+  if(c.type==='active') return `Xona ${room} hali band — ${c.who} hali check-out qilinmagan (chiqish sanasi: ${fmtShort(c.to)}). Avval uni check-out qiling, keyin yangi mehmon ro'yxatga olinadi.`;
   return `Xona ${room} band: ${c.who} (${fmtShort(c.from)}–${fmtShort(c.to)}). Boshqa xona yoki sana tanlang.`;
 }
 function doUncancel(id){
@@ -3600,12 +3617,28 @@ function checkoutIsToday(s){
   if(!s||s.status!=='out') return false;
   return stripTime(s.checkoutDate||s.outDate).getTime()===stripTime(base).getTime();
 }
+/* Shu xonada, bugun chiqqan bronlar orasida — AYNAN shu bron ENG OXIRGI chiqqanmi?
+   (vastanavit huquqi faqat eng oxirgi chiqqan mehmonga berilishi kerak — undan keyin
+   hech kim check-in qilinmagan bo'lishi kerak, aks holda avval o'shani ko'chirish kerak bo'ladi) */
+function isLastCheckoutToday(s){
+  if(!checkoutIsToday(s)) return false;
+  const sameDayOuts=stays.filter(x=>x.room===s.room && checkoutIsToday(x));
+  if(sameDayOuts.length<=1) return true;
+  const ts=x=>stripTime(x.checkoutDate||x.outDate).getTime() + (hhToFrac(x.checkoutTime)||0)*DAY;
+  const myTs=ts(s);
+  return !sameDayOuts.some(x=>x.id!==s.id && ts(x)>myTs);
+}
 function doRestore(id){
   const s=stays.find(x=>x.id===id); if(!s)return;
   if(role==='owner'){ toast('Owner faqat ko\'radi.',false); return; }
   // ⛔ Eski kunga vastanavit YO'Q — faqat bugun chiqqan bron tiklanadi (admin ham, menejer ham)
   if(!checkoutIsToday(s)){
     toast('Vastanavit faqat BUGUN chiqqan bronga ishlaydi. Eski kunni menejer «✏️ Izmenit» orqali tuzatadi.',false);
+    return;
+  }
+  // ⛔ Faqat shu xonada ENG OXIRGI chiqqan bronga vastanavit — himoya (tugma allaqachon yashirilgan, bu qo'shimcha qalqon)
+  if(!isLastCheckoutToday(s)){
+    toast(`${s.room}-xona: bu bron so'nggi chiqqan mehmon emas — undan keyin xonada boshqa mehmon chiqib ketgan. Vastanavit faqat eng oxirgi chiqqan mehmonga ruxsat etiladi.`,false);
     return;
   }
   // Tiklangandan keyingi oraliq
@@ -4202,7 +4235,8 @@ function commitAction(){
     toast('Yashash hisobga qo\'shildi — qarz oshdi ✓',true);
   } else if(a.kind==='price'){
     const np=+a.price;
-    if(!np){closeAction();return;}   // bo'sh yoki 0 — o'zgartirmaymiz
+    // 🔧 "0" HAM haqiqiy narx (bepul/comp room) — faqat bo'sh yoki noto'g'ri qiymatda bekor qilamiz
+    if(a.price===''||a.price===null||a.price===undefined||isNaN(np)){closeAction();return;}
     if(np<0){toast('Narx manfiy bo\'lishi mumkin emas.',false);return;}
     const oldN=s.nightly||Math.round(s.price/nights(s)); const n=nights(s); let changed=0;
     // auditgacha o'zgartiriladi: bugungi kun (base) va undan keyingi tunlar. O'tgan (audit qilingan) kunlar qotadi.
@@ -4283,7 +4317,8 @@ function commitAction(){
     toast(`Bron ${fmt(nd)} ga ko'chirildi ✓`,true);
   } else if(a.kind==='correct'){
     const np=+a.price;
-    if(!np){closeAction();return;}   // bo'sh yoki 0 — o'zgartirmaymiz
+    // 🔧 "0" HAM haqiqiy narx (bepul/comp room) — faqat bo'sh yoki noto'g'ri qiymatda bekor qilamiz
+    if(a.price===''||a.price===null||a.price===undefined||isNaN(np)){closeAction();return;}
     if(np<0){toast('Narx manfiy bo\'lishi mumkin emas.',false);return;}
     const oldTot=s.price; s.nightly=np; s.rates=s.rates.map(()=>np); recalc(s);
     logAction(s,'warn',`NARX KORREKSIYASI: ${money(oldTot)} → ${money(s.price)} (barcha kunlar)`,0,a.reason);
@@ -4813,6 +4848,7 @@ function renderShubha(){
 }
 
 function renderNazorat(){
+  if(role!=='manager' && role!=='owner') return `<div class="panel"><div class="empty-state">Bu bo'lim faqat menejer va egasi uchun.</div></div>`;
   const showAll = !nazDate;
   // barcha mavjud kunlar (yangi -> eski)
   const days=[...new Set(auditLog.map(a=>a.day||ymd(base)))].sort().reverse();
@@ -5149,6 +5185,7 @@ function emCompare(rawAll){
 }
 
 function renderEmehmon(){
+  if(role!=='manager' && role!=='owner') return `<div class="panel"><div class="empty-state">Bu bo'lim faqat menejer va egasi uchun.</div></div>`;
   const tolInput=`<input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" value="${emehmonTolerance}" onchange="setEmTol(this.value)" style="width:64px;padding:6px 8px;border:1.5px solid var(--line);border-radius:7px;text-align:center;font-weight:600">`;
   let resultHtml='';
   if(emResult){
@@ -5246,7 +5283,10 @@ function metrics(){
   const paid=stays.reduce((a,s)=>a+s.payments.filter(p=>p.type==='pay').reduce((x,p)=>x+p.amount,0),0);
   const refunds=stays.reduce((a,s)=>a+s.payments.filter(p=>p.type==='ref').reduce((x,p)=>x+p.amount,0),0);
   const cash=stays.reduce((a,s)=>a+s.payments.filter(p=>p.type==='pay'&&p.method==='naxt').reduce((x,p)=>x+p.amount,0),0);
-  const card=paid-cash;
+  const card=stays.reduce((a,s)=>a+s.payments.filter(p=>p.type==='pay'&&p.method==='karta').reduce((x,p)=>x+p.amount,0),0);
+  // 🔧 Payme/Click/Uzum — "Karta" ta'rifi endi Kassa/To'lovlar sahifasi bilan BIR XIL (faqat karta),
+  // shu uch usul alohida "other" da (avval bularni "card=paid-cash" ichiga yashirincha qo'shib yuborardi).
+  const other=paid-cash-card;
   // 🔧 Qarz — Qarzdorlik ro'yxati bilan BIR XIL sanalsin: chiqib ketgan (out) qarzdor ham hisobga olinadi.
   const debtStays=stays.filter(s=>balance(s)>0&&s.status!=='canceled');
   const debt=debtStays.reduce((a,s)=>a+balance(s),0);
@@ -5255,7 +5295,7 @@ function metrics(){
   const _blocked=rooms.filter(r=>isRoomBlocked(r.n,base)).length;
   const _avail=Math.max(1,rooms.length-_blocked);   // yopiq xonalar bandlikka kirmaydi
   return {occRooms,occ:occRooms.length,blocked:_blocked,pct:Math.round(occRooms.length/_avail*100),
-    paid,refunds,cash,card,debt,debtStays,arrivals,departures};
+    paid,refunds,cash,card,other,debt,debtStays,arrivals,departures};
 }
 function roomStateToday(rn){
   const s=stays.find(x=>x.status==='in' && x.room===rn && stripTime(x.inDate)<=base && stripTime(x.outDate)>=base);
@@ -5335,7 +5375,7 @@ async function loadHotelStats(){
     try{
       const {data}=await SB.from('stays').select('data').eq('hotel_id',h.id);
       const list=(data||[]).map(r=>r.data);
-      let rev=0; list.forEach(s=>{ (s.payments||[]).forEach(p=>{ if(p.type==='pay') rev+=+p.amount||0; if(p.type==='refund') rev-=+p.amount||0; }); });
+      let rev=0; list.forEach(s=>{ (s.payments||[]).forEach(p=>{ if(p.type==='pay') rev+=+p.amount||0; if(p.type==='ref') rev-=+p.amount||0; }); });
       hotelStats[h.id]={stays:list.length, revenue:rev};
     }catch(e){ hotelStats[h.id]={stays:0,revenue:0}; }
   }
@@ -5530,14 +5570,19 @@ function renderTolov(){
   // karta turlari bo'yicha bo'lish (Humo, UzCard, Visa, Master...)
   const cardTypes={};
   inRange.filter(p=>p.type==='pay'&&p.method==='karta').forEach(p=>{ const c=p.card||'Karta'; cardTypes[c]=(cardTypes[c]||0)+p.amount; });
+  // 🔧 Payme/Click/Uzum — bular ham HAQIQIY to'lov, avval hech qayerda hisobga kirmasdi (kassa/Sof tushum'dan "yo'qolib" ko'rinardi)
+  const otherMethods=['payme','click','uzum'];
+  const other=inRange.filter(p=>p.type==='pay'&&otherMethods.includes(p.method)).reduce((a,p)=>a+p.amount,0);
+  const otherTypes={};
+  inRange.filter(p=>p.type==='pay'&&otherMethods.includes(p.method)).forEach(p=>{ otherTypes[p.method]=(otherTypes[p.method]||0)+p.amount; });
   const refunds=inRange.filter(p=>p.type==='ref').reduce((a,p)=>a+p.amount,0);
-  const net=cash+card-refunds;
+  const net=cash+card+other-refunds;
   // 🔧 Qarz — Qarzdorlik ro'yxati bilan BIR XIL sanalsin: chiqib ketgan (out) qarzdor ham hisobga olinadi.
   const debtStays=stays.filter(s=>balance(s)>0&&s.status!=='canceled');
   const debt=debtStays.reduce((a,s)=>a+balance(s),0);
 
   const shown=inRange.slice().reverse().filter(p=> payFilter==='all' || (payFilter==='naxt'&&p.method==='naxt'&&p.type==='pay')
-    || (payFilter==='karta'&&p.method==='karta'&&p.type==='pay') || (payFilter==='ref'&&p.type==='ref'));
+    || (payFilter==='karta'&&p.method==='karta'&&p.type==='pay') || (payFilter==='boshqa'&&otherMethods.includes(p.method)&&p.type==='pay') || (payFilter==='ref'&&p.type==='ref'));
   const shownSum=shown.reduce((a,p)=>a+(p.type==='ref'?-p.amount:p.amount),0);
 
   const rows=shown.map(p=>`<tr onclick="openFolio('${p.sid}')" style="cursor:pointer">
@@ -5575,6 +5620,8 @@ function renderTolov(){
     <div class="stat accent a-green"><div class="ico i-green">₸</div><div class="l">${t('naxtkassa')}</div><div class="v money-v">${somNum(cash)}<small> so'm</small></div></div>
     <div class="stat accent a-blue"><div class="ico i-blue">💳</div><div class="l">${t('kartajami')}</div><div class="v money-v">${somNum(card)}<small> so'm</small></div>
       <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px">${Object.keys(cardTypes).length?Object.entries(cardTypes).map(([c,v])=>`<span class="chip card" style="font-size:11px">${c}: ${somNum(v)}</span>`).join(''):`<span style="color:var(--txt-3);font-size:11px">${t('kartayoq')}</span>`}</div></div>
+    <div class="stat accent a-blue"><div class="ico i-blue">📱</div><div class="l">${t('boshqatolov')}</div><div class="v money-v">${somNum(other)}<small> so'm</small></div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px">${Object.keys(otherTypes).length?Object.entries(otherTypes).map(([c,v])=>`<span class="chip card" style="font-size:11px">${methodLabel(c)}: ${somNum(v)}</span>`).join(''):`<span style="color:var(--txt-3);font-size:11px">—</span>`}</div></div>
     <div class="stat accent a-red"><div class="ico i-red">↩</div><div class="l">${t('vozvratlar')}</div><div class="v money-v" style="color:var(--red-ink)">${somNum(refunds)}<small> so'm</small></div></div>
     <div class="stat accent a-violet"><div class="ico i-violet">Σ</div><div class="l">${t('softushum')}</div><div class="v money-v">${somNum(net)}<small> so'm</small></div><div class="d">${t('naxtkarta')}</div></div>
     <div class="stat accent a-amber"><div class="ico i-amber">⚠</div><div class="l">${t('umumiyqarz')}</div><div class="v money-v" style="color:var(--red-ink)">${somNum(debt)}<small> so'm</small></div><div class="d down">${debtStays.length} ${t('tamehmon')}</div></div>
@@ -5582,7 +5629,7 @@ function renderTolov(){
 
   <div class="panel"><div class="panel-h"><h3>Pul harakatlari — ${payPeriod.from} — ${payPeriod.to}</h3><span class="spacer"></span>
     <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px;margin-right:8px" onclick="printPage('Kassa hisoboti')">🖨 ${P('Chop etish')}</button>
-    <div class="seg">${tab('all','Hammasi')}${tab('naxt','Naxt')}${tab('karta','Karta')}${tab('ref','Vozvrat')}</div></div>
+    <div class="seg">${tab('all','Hammasi')}${tab('naxt','Naxt')}${tab('karta','Karta')}${tab('boshqa','Boshqa')}${tab('ref','Vozvrat')}</div></div>
     <table class="data"><thead><tr><th>${P("Vaqt")}</th><th>${P("Xona")}</th><th>${P("Mehmon")}</th><th>${P("Turi")}</th><th>${P("Usul")}</th><th>${P("Kim")}</th><th style="text-align:right">${P("Summa")}</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr style="background:var(--panel-2)"><td colspan="6" style="text-align:right;font-weight:700;padding:12px 20px">ИТОГО (belgilangan davr):</td>
@@ -6354,7 +6401,7 @@ function renderKunlik(){
   /* --- TUSHUM (usullar bo'yicha) --- */
   const rows=[];
   stays.forEach(s=>(s.payments||[]).forEach(pm=>{ if(sameDay(pm.ts)) rows.push({s,pm}); }));
-  const M=[['naxt','Naqd'],['karta','Karta'],['payme','Payme'],['click','Click'],['bank','Bank o\'tkazma']];
+  const M=[['naxt','Naqd'],['karta','Karta'],['payme','Payme'],['click','Click'],['uzum','Uzum']];
   const sums={}; let jamiIn=0, jamiRef=0;
   rows.forEach(({pm})=>{
     const k=pm.method||'naxt';
