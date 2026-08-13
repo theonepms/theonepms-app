@@ -3726,19 +3726,12 @@ function drawIzmenit(){
       <div class="modal-h"><h3>✏️ Izmenit — ${esc(s.firstName)} ${esc(s.lastName)}</h3><button class="x" onclick="closeIzmenit()">✕</button></div>
       <div class="modal-b">
         <div style="background:var(--amber-bg);border:1px solid #e8c98a;border-radius:10px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;color:var(--amber-ink)">
-          ✏️ Bu yerda <b>hamma narsani bemalol o'zgartira olasiz</b> — ism, xona, sana, narx, to'lov, xizmat. Pastdan <b>«Tuzatishni saqlash»</b> ni bosganda amalga oshadi.<br>
+          ✏️ Bu yerda <b>narx, to'lov va xizmatlarni</b> to'g'rilaysiz. Pastdan <b>«Tuzatishni saqlash»</b> ni bosganda amalga oshadi.<br>
+          🔒 Ism/familiya, xona va sanani o'zgartirish — <b>faqat operator</b> qiladi (bu yerda yo'q).<br>
           🔴 Har o'zgarish <b>nazorat jurnaliga «eski → yangi»</b> ko'rinishda yoziladi — iz o'chmaydi.</div>
         <div class="grid2">
-          <div class="field"><label>Ism</label><input value="${esc(a.firstName)}" oninput="izmenitState.firstName=this.value"></div>
-          <div class="field"><label>Familiya</label><input value="${esc(a.lastName)}" oninput="izmenitState.lastName=this.value"></div>
-        </div>
-        <div class="grid2">
-          <div class="field"><label>Xona</label><select onchange="izmenitState.room=this.value">${roomOpts}</select></div>
+          <div class="field"><label>Mehmon</label><input value="${esc(a.firstName)} ${esc(a.lastName)}" disabled style="opacity:.7;background:var(--panel-2)"></div>
           <div class="field"><label>1 kunlik narx (so'm)</label><input type="text" inputmode="numeric" value="${mIn(a.nightly)}" oninput="izmenitState.nightly=moneyVal(this)"></div>
-        </div>
-        <div class="grid2">
-          <div class="field"><label>Kelish sanasi</label><input type="date" value="${a.inDate}" onchange="izmenitState.inDate=this.value"></div>
-          <div class="field"><label>Chiqish sanasi</label><input type="date" value="${a.outDate}" onchange="izmenitState.outDate=this.value"></div>
         </div>
         <div class="field"><label>To'lovlar — summani to'g'rilash yoki vozvrat</label>
           <div style="background:#eff4ff;border:1px solid #c9d8f5;border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:11.5px;color:var(--brand-ink);line-height:1.55">
@@ -3766,29 +3759,9 @@ function commitIzmenit(){
   if(isNaN(newIn.getTime())||isNaN(newOut.getTime())){ toast('Sana noto\'g\'ri.',false); return; }
   if(stripTime(newOut).getTime()<stripTime(newIn).getTime()){ toast('Chiqish sanasi kelishdan oldin bo\'lmasin.',false); return; }
   const newNightly=+a.nightly||0;
-  const changes=[];   // "Maydon: eski → yangi"
+  const changes=[];   // "Maydon: eski → yangi" (ism/xona/sana bu yerda YO'Q — faqat operator)
 
-  // 1) ism / familiya
-  if(a.firstName.trim()!==s.firstName) changes.push(`Ism: ${s.firstName||'—'} → ${a.firstName.trim()||'—'}`);
-  if(a.lastName.trim()!==s.lastName)   changes.push(`Familiya: ${s.lastName||'—'} → ${a.lastName.trim()||'—'}`);
-
-  // 2) xona (band bo'lsa — rad)
-  if(a.room!==s.room){
-    const inMs=stripTime(newIn).getTime();
-    const outMs=Math.max(stripTime(newOut).getTime(), inMs+DAY);
-    const clash=stays.some(x=>x.id!==s.id && x.room===a.room && x.status!=='canceled'
-      && stripTime(x.inDate).getTime()<outMs && stripTime(x.checkoutDate||x.outDate).getTime()>inMs);
-    if(clash){ toast(`${a.room}-xona bu sanalarda band.`,false); return; }
-    changes.push(`Xona: ${s.room} → ${a.room}`);
-  }
-
-  // 3) sanalar
-  const oldIn=ymd(s.inDate), oldOut=ymd(s.checkoutDate||s.outDate);
-  const dateChanged=(a.inDate!==oldIn)||(a.outDate!==oldOut);
-  if(a.inDate!==oldIn)  changes.push(`Kelish: ${D(oldIn)} → ${D(a.inDate)}`);
-  if(a.outDate!==oldOut) changes.push(`Chiqish: ${D(oldOut)} → ${D(a.outDate)}`);
-
-  // 4) narx
+  // narx
   const oldNightly=s.nightly||Math.round(s.price/Math.max(1,nights(s)));
   const priceChanged=newNightly!==oldNightly;
   if(priceChanged) changes.push(`Narx (1 kun): ${money(oldNightly)} → ${money(newNightly)}`);
@@ -3829,13 +3802,8 @@ function commitIzmenit(){
     s.izmenitLog.push({at:uzTime()+' · '+fmtShort(base), by:'Menejer', reason:a.reason.trim(), changes:changes.slice()});
   }
 
-  // ── QO'LLAYMIZ ──
-  s.firstName=a.firstName.trim(); s.lastName=a.lastName.trim();
-  if(a.room!==s.room) s.room=a.room;
-  s.inDate=stripTime(newIn);
-  if(s.status==='out'){ s.checkoutDate=stripTime(newOut); s.outDate=stripTime(newOut); }
-  else { s.outDate=stripTime(newOut); }
-  if(dateChanged||priceChanged){
+  // ── QO'LLAYMIZ ── (ism/xona/sana O'ZGARMAYDI — faqat operator; bu yerda narx/to'lov/xizmat)
+  if(priceChanged){
     const n=Math.max(1,nights(s));
     s.rates=Array(n).fill(newNightly);
     s.nightly=newNightly;
