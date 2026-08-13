@@ -3939,7 +3939,11 @@ function drawActionModal(){
       ${a.rSel?`
         <div class="field" style="margin-top:14px"><label>Qaytariladigan summa (so'm)${maxAmt?` — ko'pi bilan ${money(maxAmt)}`:''}</label>
           <input type="text" inputmode="numeric" id="actAmt" value="${mIn(a.amount)}" oninput="actState.amount=moneyVal(this)" placeholder="To'liq yoki qisman"></div>
-        ${isPay?`<div class="field"><label>Qaysi usulda qaytariladi</label><div id="actMethod">${actMethodHtml()}</div></div>`:''}
+        ${isPay?`<div class="field"><label>Qaysi usulda qaytariladi</label>
+          <div style="padding:10px 12px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;font-weight:600">
+            ${a.method==='karta'?('💳 '+(a.card||'Karta')):('💵 '+methodLabel(a.method||'naqd'))}
+            <span style="font-size:11px;color:var(--txt-3);font-weight:500;display:block;margin-top:2px">🔒 To'langan usulda qaytariladi — o'zgartirib bo'lmaydi (naxt→naxt, karta→karta)</span>
+          </div></div>`:''}
         <div class="t-box" style="margin-top:6px">
           <div class="t-row"><span>Jami hisob</span><b>${money(totalDue(s))}</b></div>
           <div class="t-row"><span>To'langan</span><b>${money(paidSum(s))}</b></div>
@@ -4113,11 +4117,16 @@ function commitAction(){
       const refundable=Math.max(0,totalPaid-totalRef);
       if(refundable<=0){ toast('Qaytariladigan pul qolmagan — hammasi allaqachon qaytarilgan.',false); return; }
       if(amt>refundable){ toast(`Ko'pi bilan ${money(refundable)} qaytarish mumkin (qolgan summa).`,false); return; }
-      const p=(s.payments||[]).filter(x=>x.type==='pay')[0]||{method:'naxt'};
-      s.payments.push({amount:amt,method:a.method||p.method,card:(a.method||p.method)==='karta'?(a.card||p.card||''):'',type:'ref',time:stamp,ts:new Date(base),by:role==='admin'?'Admin':'Menejer'});
-      folioSync('refund',{stay_id:s.id,amount:amt,method:(a.method||p.method),card:(a.method||p.method)==='karta'?(a.card||p.card||''):''});
-      logAction(s,'refund',`PUL QAYTARILDI (kassadan): ${money(amt)} · ${(a.method||p.method)==='karta'?(a.card||p.card||'Karta'):methodLabel(a.method||p.method)}`,amt,a.reason);
-      toast('Pul qaytarildi — kassadan chiqdi. Nazoratga yozildi ✓',true);
+      /* 🔒 9-BAND: vozvrat FAQAT to'langan usulda. Tanlangan to'lovning haqiqiy usulini
+         to'g'ridan-to'g'ri olamiz — admin usulni o'zgartira olmaydi (naxt→naxt, karta→karta). */
+      const payIdx=+a.rSel.split(':')[1];
+      const selPay=(s.payments||[])[payIdx]||(s.payments||[]).filter(x=>x.type==='pay')[0]||{method:'naxt'};
+      const refMethod=selPay.method||'naxt';
+      const refCard=refMethod==='karta'?(selPay.card||''):'';
+      s.payments.push({amount:amt,method:refMethod,card:refCard,type:'ref',time:stamp,ts:new Date(base),by:role==='admin'?'Admin':'Menejer'});
+      folioSync('refund',{stay_id:s.id,amount:amt,method:refMethod,card:refCard});
+      logAction(s,'refund',`PUL QAYTARILDI (kassadan): ${money(amt)} · ${refMethod==='karta'?(refCard||'Karta'):methodLabel(refMethod)}`,amt,a.reason);
+      toast('Pul qaytarildi — to\'langan usulda, kassaga yozildi ✓',true);
 
     } else if(a.rSel==='stay'){
       /* 2a) YASHASHNI hisobdan chegirish — kassaga tegmaydi (qolgan qismдан oshmasин) */
