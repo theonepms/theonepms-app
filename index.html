@@ -599,8 +599,8 @@ table.data tr:hover td{background:var(--panel-2)}
       <div class="spacer"></div>
       <div class="toptools">
         <span class="pill" id="cloudPill" style="font-size:11px">☁️</span>
-        <button class="ttbtn" onclick="exportPageExcel()" title="Excelga yuklash">⤓ Excel</button>
-        <button class="ttbtn" onclick="printCurrentPage()" title="Chop etish">🖨 Chop</button>
+        <button class="ttbtn" id="topExcelBtn" onclick="exportPageExcel()" title="Excelga yuklash">⤓ Excel</button>
+        <button class="ttbtn" id="topPrintBtn" onclick="printCurrentPage()" title="Chop etish">🖨 Chop</button>
         <button class="ttbtn" id="darkBtn" onclick="toggleDark()" title="Qorong'i / yorug' rejim">🌙</button>
         <button class="ttbtn" onclick="doLogout()" title="Tizimdan chiqish">🚪 Chiqish</button>
       </div>
@@ -2470,6 +2470,13 @@ function render(){
     }catch(e){console.error(e)}
   };
   setHotelPill();
+  /* 14-band: Shaxmatka va Sozlamalar sahifasida header Excel/Chop tugmalari YASHIRINADI */
+  try{
+    const hideExp = (page==='shaxmatka'||page==='sozlamalar');
+    const eb=document.getElementById('topExcelBtn'), pb=document.getElementById('topPrintBtn');
+    if(eb) eb.style.display=hideExp?'none':'';
+    if(pb) pb.style.display=hideExp?'none':'';
+  }catch(e){console.error(e)}
   if(page==='hotellar') v.innerHTML=renderHotels();
   else if(page==='dashboard') v.innerHTML=renderDashboard();
   else if(page==='shaxmatka') v.innerHTML=renderGantt();
@@ -2764,7 +2771,6 @@ function renderGanttShell(headCols, rowsHtml, days, ND){
       <button class="${GANTT_DAYS===12?'on':''}" onclick="setGanttDays(12)">12</button>
       <button class="${GANTT_DAYS===21?'on':''}" onclick="setGanttDays(21)">21</button>
     </div>
-    <button class="btn btn-ghost" style="padding:6px 11px;font-size:12px" onclick="printPage('Shaxmatka')">🖨 ${P('Chop etish')}</button>
   </div>
   <div class="gantt-wrap">
     <div class="gantt2">
@@ -3598,9 +3604,12 @@ function doRestore(id){
   const clash=stays.filter(x=>x.id!==id && x.room===s.room && x.status!=='canceled')
     .filter(x=>{ const xs=stayStartMs(x), xe=Math.max(stayEndMs(x),xs+30*60000); return xs<en-1000 && xe>st+1000; });
   if(!clash.length){ restoreNow(s,newOut); return; }   // ✅ to'qnashmadi — hech kim ko'chmaydi
-  // ⚠️ To'qnashdi — menejerga tanlov beramiz
-  actState={id,kind:'restore',reason:'',newRoom:'',mode:'dayuse',clash,newOut};
-  drawRestoreModal();
+  // ⛔ To'qnashdi — HONA BAND. Vastanavit qilib bo'lmaydi.
+  // Avval yangi (yashayotgan) mehmonni BOSHQA XONAGA ko'chirish kerak.
+  const bandNames=clash.map(x=>`${x.firstName} ${x.lastName}`).join(', ');
+  logAction(s,'warn',`Vastanavit urinishi TO'SILDI — ${s.room}-xona band (${bandNames})`,0,'Hona band');
+  toast(`${s.room}-xona band — avval yangi mehmonni (${bandNames}) boshqa xonaga ko'chiring, keyin tiklaysiz.`,false);
+  return;
 }
 function restoreNow(s,newOut,room){
   s.status='in'; s.checkoutTime=''; s.checkoutDate=null;
@@ -5535,25 +5544,8 @@ function renderTolov(){
   const tab=(k,l)=>`<button class="${payFilter===k?'on':''}" onclick="setPayFilter('${k}')">${l}</button>`;
   const pbtn=(k,l)=>`<button class="${payPeriod.mode===k?'on':''}" onclick="setPeriod('${k}')">${l}</button>`;
 
-  /* Smena yopish paneli */
-  const bugungiSmena=shifts.find(x=>x.day===ymd(base));
-  const shiftPanel=`
-  <div class="panel" style="margin-bottom:14px"><div class="panel-h"><h3>💵 Smena — kassani tekshirish</h3><span class="spacer"></span>
-    ${bugungiSmena?`<span class="tag ${(bugungiSmena.dCash||bugungiSmena.dCard)?'':'paid'}" style="${(bugungiSmena.dCash||bugungiSmena.dCard)?'background:var(--red-bg);color:var(--red-ink)':''}">${(bugungiSmena.dCash||bugungiSmena.dCard)?'🚨 Farq bor':'✓ Yopilgan'}</span>`:''}
-    <button class="btn btn-primary" style="padding:8px 16px;font-size:13px;margin-left:8px" onclick="openShiftModal()">
-      ${bugungiSmena?'🔄 Qayta tekshirish':'💵 Smenani yopish'}</button></div>
-    <div class="mini-hint" style="padding:9px 16px;line-height:1.55">Kun oxirida kassadagi <b>haqiqiy naqd pulni</b> sanang va <b>terminal hisobotini</b> kiriting — dastur solishtiradi.</div>
-    ${shifts.length?`<table class="data"><thead><tr><th>Kun</th><th>Naqd: dastur</th><th>Naqd: haqiqatda</th><th>Karta: dastur</th><th>Karta: terminal</th><th>Natija</th><th>Kim</th></tr></thead><tbody>
-      ${shifts.slice(0,10).map(x=>{
-        const bad=(x.dCash||x.dCard);
-        return `<tr${bad?' style="background:var(--red-bg)"':''}>
-          <td><b>${x.day.split('-').reverse().join('.')}</b></td>
-          <td class="money">${money(x.cashExpect)}</td><td class="money">${money(x.cashReal)}</td>
-          <td class="money">${money(x.cardExpect)}</td><td class="money">${money(x.cardReal)}</td>
-          <td>${bad?`<b style="color:var(--red-ink)">naqd ${x.dCash>0?'+':''}${money(x.dCash)} · karta ${x.dCard>0?'+':''}${money(x.dCard)}</b>`:'<span style="color:var(--green-ink)">✓ teng</span>'}</td>
-          <td style="white-space:nowrap">${/admin/i.test(x.by)?`<b style="color:var(--red-ink)">${x.by}</b>`:x.by}</td></tr>`;
-      }).join('')}</tbody></table>`:''}
-  </div>`;
+  /* Smena yopish paneli — OLIB TASHLANDI (foydasiz, buzuq raqam muammosi) */
+  const shiftPanel='';
   return shiftPanel + `
   <div class="panel"><div class="panel-h" style="flex-wrap:wrap;gap:10px">
     <h3>${P("Davr")}</h3>
