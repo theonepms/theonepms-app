@@ -2659,12 +2659,9 @@ function renderGanttRows(){
       const duOffset=du?0:Math.min(3,duCountByDay[dayIdx]||0)*0.25;
       const startInset=Math.max((turn&&!du)?0.55:0, duOffset);
       if(du && s.status==='out'){
-        /* CHIQIB KETGAN kunduzgi — quyida kun bo'yicha ¼ ga bo'linadi.
-           🛠 Agar shu xonada bir kunda avvalgi mehmon chiqib, shu mehmon kirgan bo'lsa (turn) —
-           chizig'ini avvalgisining USTIGA tushirmaslik uchun bir oz o'ngga suramiz (kichik bo'shliq qoladi). */
+        /* CHIQIB KETGAN kunduzgi — quyida kun bo'yicha ¼ ga bo'linadi */
         const t1=hhToFrac(s.arrTime)||0;
-        const t1s=turn?Math.max(t1,0.55):t1;
-        geo.push({s, L:dayIdx+t1s, R:dayIdx+t1s+0.05, du:true, dayIdx, t1});
+        geo.push({s, L:dayIdx+t1, R:dayIdx+t1+0.05, du:true, dayIdx, t1});
       } else if(du){
         /* HALI CHIQMAGAN kunduzgi — qachon ketishi noma'lum → keyingi kunga o'tib turadi */
         const t1=hhToFrac(s.arrTime)||0;
@@ -2729,6 +2726,20 @@ function renderGanttRows(){
         }
         i=j+1;
       }
+    });
+
+    /* ══ 3.5) 🛠 XONADA IKKITA CHIZIQ HECH QACHON USTMA-UST TUSHMASIN — necha marta
+       ketma-ket mehmon almashsa ham (zanjir: 2, 3, 4... mehmon bir kunda), har biri
+       o'zidan oldingisidan KEYIN, kichik bo'shliq bilan boshlanadi. Chapdan o'ngga
+       tartiblab, ketma-ket suramiz — shuning uchun zanjir qancha uzun bo'lmasin ishlaydi. ══ */
+    const CHAIN_GAP=0.05;
+    let _prevR=-Infinity;
+    geo.slice().sort((a,b)=>a.L-b.L).forEach(g=>{
+      if(g.L<_prevR+CHAIN_GAP){
+        const w=g.R-g.L;
+        g.L=_prevR+CHAIN_GAP; g.R=g.L+w;
+      }
+      _prevR=Math.max(_prevR,g.R);
     });
     // 3) chizamiz
     geo.forEach(g=>{
