@@ -2432,7 +2432,7 @@ function buildNav(){
   if(isSuper) items=NAV_SUPER.concat(items);
   const openCount=auditLog.filter(a=>(a.day||ymd(base))===ymd(base)).length;
   let shubhaCount=0;
-  try{ if(role==='manager'||role==='owner'){ const today=ymd(base); shubhaCount=auditLog.filter(a=>{const t=a.text||'';return (a.day||today)===today && (/PUL QAYTARILDI/i.test(t)||/IZMENIT/i.test(t));}).length; } }catch(e){console.error(e)}
+  try{ if(role==='manager'||role==='owner'){ const today=ymd(base); shubhaCount=auditLog.filter(a=>{const t=a.text||'';return (a.day||today)===today && (/PUL QAYTARILDI/i.test(t)||/IZMENIT/i.test(t)||/⚠️ SHUBHALI/i.test(t));}).length; } }catch(e){console.error(e)}
   document.getElementById('nav').innerHTML=items.map(it=>{
     if(it.s) return `<div class="navsec">${t(it.s)}</div>`;
     const b=it.badge&&openCount?`<span class="badge">${openCount}</span>`
@@ -3445,7 +3445,7 @@ function can(action,s){
     case 'moveRoom':     return stayIsToday(s);    // xona — FAQAT joriy kun
     case 'extend':       return stayIsToday(s);    // muddat — faqat joriy kun, faqat uzaytirish
     case 'price':        return stayIsToday(s);    // narx — FAQAT joriy kun (eski kunlar qotgan)
-    case 'cashRefund':   return false;             // ⛔ kassadan pul qaytarish — menejer
+    case 'cashRefund':   return stayIsToday(s);    // 💵 kassadan vozvrat — FAQAT joriy kun (admin)
     case 'rebook':       return false;             // ⛔ kelish sanasi — menejer
     case 'restore':      return false;             // ⛔ vastanavit — menejer
     default:             return false;
@@ -4120,8 +4120,16 @@ function commitAction(){
       s.charges=s.charges||[];
       s.charges.push({name:'Yashash — hisobdan chegirildi',amount:-Math.abs(amt),premicha:a.premicha,time:stamp,by:role==='admin'?'Admin':'Menejer'});
       folioSync('charge',{stay_id:s.id,name:'Yashash — hisobdan chegirildi',amount:-Math.abs(amt),premicha:a.premicha});
-      logAction(s,'refund',`HISOBDAN CHEGIRILDI (yashash): ${money(amt)} — pul harakati yo'q, qarz kamaydi`,0,a.reason);
-      toast('Hisobdan chegirildi — kassaga tegmadi. Nazoratga yozildi ✓',true);
+      /* 🚨 SHUBHA TEKSHIRUVI: bronga PUL TO'LANGAN bo'lsa-yu, hisob chegirilsa (0'lansa)
+         → pul o'g'irlash xavfi. Darrov SHUBHALI amallarga (yuqori xavf). */
+      const paidSoFar=(s.payments||[]).filter(p=>p.type==='pay').reduce((x,p)=>x+p.amount,0);
+      if(paidSoFar>0){
+        logAction(s,'refund',`⚠️ SHUBHALI: HISOBDAN CHEGIRILDI (yashash) ${money(amt)} — lekin ${money(paidSoFar)} PUL QAYTARILDI emas, TO'LANGAN edi! Pul qayerda?`,0,a.reason);
+        toast('⚠️ Pul to\'langan edi — bu SHUBHALI amallarga yozildi 🔴',true);
+      } else {
+        logAction(s,'refund',`HISOBDAN CHEGIRILDI (yashash): ${money(amt)} — pul harakati yo'q, qarz kamaydi`,0,a.reason);
+        toast('Hisobdan chegirildi — kassaga tegmadi. Nazoratga yozildi ✓',true);
+      }
 
     } else if(a.rSel.startsWith('chg:')){
       /* 2b) XIZMATNI hisobdan olib tashlash — kassaga tegmaydi (QOLGAN qismдан oshmasин!) */
@@ -4705,7 +4713,7 @@ function renderShubha(){
   // ⚠️ FAQAT 2 xil sezgir amal:
   //   (1) VOZVRAT — pul qaytarish (kassadan chiqadi): menejer VA admin
   //   (2) IZMENIT — menejer tuzatishi (har qanday kun)
-  const isRef=a=>/PUL QAYTARILDI/i.test(a.text||'');
+  const isRef=a=>/PUL QAYTARILDI/i.test(a.text||'')||/⚠️ SHUBHALI/i.test(a.text||'');
   const isIz =a=>/IZMENIT/i.test(a.text||'');
   const all=auditLog.filter(a=>isRef(a)||isIz(a));   // auditLog[0] = eng yangi (yangi tepada)
   const refCount=all.filter(isRef).length;
