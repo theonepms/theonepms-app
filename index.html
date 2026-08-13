@@ -6511,7 +6511,16 @@ async function cloudLoad(){
     // 2) nazorat jurnali
     const {data:logs,error:e2}=await SB.from('audit_log').select('entry').eq('hotel_id',HOTEL_ID).order('id',{ascending:false}).limit(3000);
     if(e2) throw e2;
-    auditLog=(logs||[]).map(r=>r.entry);
+    // 🧹 FILTR: folio edge function yozgan "xom" (undefined) takror yozuvlarni chiqarib tashlaymiz.
+    // Belgi: time maydoni ISO formatda (T...Z) yoki 'source' yo'q va room undefined.
+    // Dastur (logAction) va aqlli trigger yozgan to'g'ri yozuvlar qoladi.
+    auditLog=(logs||[]).map(r=>r.entry).filter(a=>{
+      if(!a || typeof a!=='object') return false;
+      const tm=String(a.time||'');
+      if(/\d{4}-\d{2}-\d{2}T/.test(tm)) return false;   // ISO xom vaqt → folio takrori, chiqarib tashlaymiz
+      if(!a.text) return false;                          // matnsiz yozuv → chiqarib tashlaymiz
+      return true;
+    });
 
     // 3) sozlamalar
     const {data:st,error:e3}=await SB.from('settings').select('data').eq('hotel_id',HOTEL_ID).maybeSingle();
