@@ -2659,9 +2659,12 @@ function renderGanttRows(){
       const duOffset=du?0:Math.min(3,duCountByDay[dayIdx]||0)*0.25;
       const startInset=Math.max((turn&&!du)?0.55:0, duOffset);
       if(du && s.status==='out'){
-        /* CHIQIB KETGAN kunduzgi — quyida kun bo'yicha ¼ ga bo'linadi */
+        /* CHIQIB KETGAN kunduzgi — quyida kun bo'yicha ¼ ga bo'linadi.
+           🛠 Agar shu xonada bir kunda avvalgi mehmon chiqib, shu mehmon kirgan bo'lsa (turn) —
+           chizig'ini avvalgisining USTIGA tushirmaslik uchun bir oz o'ngga suramiz (kichik bo'shliq qoladi). */
         const t1=hhToFrac(s.arrTime)||0;
-        geo.push({s, L:dayIdx+t1, R:dayIdx+t1+0.05, du:true, dayIdx, t1});
+        const t1s=turn?Math.max(t1,0.55):t1;
+        geo.push({s, L:dayIdx+t1s, R:dayIdx+t1s+0.05, du:true, dayIdx, t1});
       } else if(du){
         /* HALI CHIQMAGAN kunduzgi — qachon ketishi noma'lum → keyingi kunga o'tib turadi */
         const t1=hhToFrac(s.arrTime)||0;
