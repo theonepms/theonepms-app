@@ -119,6 +119,16 @@ h1,h2,h3,h4{font-family:'Space Grotesk',Inter,sans-serif;font-weight:600;letter-
 
 /* ---------- APP SHELL ---------- */
 #app{display:grid;grid-template-columns:230px 1fr;height:100vh}
+/* === Yon panelni yopish/ochish (QO'SHIMCHA — mavjud uslublarga tegmaydi) === */
+#app{transition:grid-template-columns .26s ease}
+#app.sb-collapsed{grid-template-columns:0 1fr}
+.side{transition:opacity .2s ease,padding .26s ease}
+#app.sb-collapsed .side{opacity:0;padding-left:0;padding-right:0;pointer-events:none;overflow:hidden}
+#sbToggle{position:fixed;top:80px;left:10px;z-index:1200;width:30px;height:30px;border-radius:8px;
+  background:var(--panel,#fff);border:1px solid var(--line,#d6deea);color:var(--txt-2,#3a4557);
+  font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 7px rgba(0,0,0,.14);transition:left .26s ease,background .15s ease}
+#sbToggle:hover{background:var(--panel-2,#eef2f8)}
 .side{background:var(--ink);color:#c3ccdf;display:flex;flex-direction:column;padding:16px 12px}
 .side .brand{color:#fff;font-size:18px;padding:6px 8px 18px}
 .side .brand small{color:#7b88a6}
@@ -566,6 +576,7 @@ table.data tr:hover td{background:var(--panel-2)}
 
 <!-- ============ APP ============ -->
 <div id="app" class="hidden">
+  <button id="sbToggle" type="button" onclick="toggleSidebar()" title="Yon panelni yopish/ochish" aria-label="Yon panelni yopish/ochish">‹</button>
   <aside class="side">
     <div class="brand"><span class="dot"></span>THEONE<span style="color:#6ea8ff">PMS</span><br></div>
     <nav class="nav" id="nav"></nav>
@@ -6353,6 +6364,32 @@ function resetState(){
 
 /* Sahifa yopilganda — saqlab qolamiz */
 window.addEventListener('beforeunload',()=>{ if(SB&&savePending){ clearTimeout(saveTimer); savePending=false; cloudSave(); } });
+</script>
+<!-- === Yon panelni yopish/ochish — ALOHIDA, mustaqil funksiya === -->
+<script>
+(function(){
+  var KEY='theonepms_sidebar';   // '1' = yopiq, '0' = ochiq
+  function applySidebar(collapsed){
+    var app=document.getElementById('app');
+    var btn=document.getElementById('sbToggle');
+    if(app){ if(collapsed) app.classList.add('sb-collapsed'); else app.classList.remove('sb-collapsed'); }
+    if(btn){ btn.textContent = collapsed ? '›' : '‹'; }  // ›  :  ‹
+  }
+  window.toggleSidebar=function(){
+    var app=document.getElementById('app');
+    if(!app) return;
+    var collapsed=!app.classList.contains('sb-collapsed');
+    try{ localStorage.setItem(KEY, collapsed?'1':'0'); }catch(e){}
+    applySidebar(collapsed);
+  };
+  function initSidebar(){
+    var saved='0';
+    try{ saved=localStorage.getItem(KEY)||'0'; }catch(e){}
+    applySidebar(saved==='1');
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',initSidebar);
+  else initSidebar();
+})();
 </script>
 </body>
 </html>
