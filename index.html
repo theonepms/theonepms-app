@@ -688,6 +688,25 @@ let emehmonTolerance=15; // daqiqa — menejer o'zgartiradi
 function uzTime(){ return new Date().toLocaleTimeString('ru-RU',{timeZone:'Asia/Tashkent',hour:'2-digit',minute:'2-digit'}); }
 /* === XSS himoyasi: foydalanuvchi matnini ekranga chiqarishdan oldin tozalash === */
 function esc(v){ return (v==null?'':String(v)).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+/* === Chiroyli tasdiq oynasi (brauzerning eski confirm() o'rniga) — Promise<boolean> qaytaradi === */
+function askConfirm(msg, opts){
+  opts=opts||{};
+  return new Promise(function(resolve){
+    var ov=document.createElement('div'); ov.className='overlay'; ov.style.zIndex='10050';
+    ov.innerHTML='<div class="modal" style="max-width:430px">'
+      +'<div class="modal-b" style="padding:24px 24px 8px"><div style="font-size:14px;line-height:1.65;color:var(--txt-2);white-space:pre-line">'+esc(msg)+'</div></div>'
+      +'<div class="modal-f"><button class="btn btn-ghost" id="_acNo">'+esc(opts.no||'Bekor')+'</button>'
+      +'<button class="btn btn-primary" id="_acYes"'+(opts.danger?' style="background:var(--red);border-color:var(--red)"':'')+'>'+esc(opts.yes||'Ha, davom etish')+'</button></div></div>';
+    document.body.appendChild(ov);
+    function done(v){ if(ov.parentNode) ov.parentNode.removeChild(ov); document.removeEventListener('keydown',onKey); resolve(v); }
+    function onKey(e){ if(e.key==='Escape') done(false); else if(e.key==='Enter') done(true); }
+    ov.querySelector('#_acNo').onclick=function(){ done(false); };
+    ov.querySelector('#_acYes').onclick=function(){ done(true); };
+    ov.addEventListener('click',function(e){ if(e.target===ov) done(false); });
+    document.addEventListener('keydown',onKey);
+    var y=ov.querySelector('#_acYes'); if(y) y.focus();
+  });
+}
 let seq=100;
 // Har bir mehmonga 100% noyob ID — vaqt + sanoq + tasodifiy.
 // Sahifa yangilansa (F5) ham, tez ketma-ket qo'shilsa ham HECH QACHON takrorlanmaydi.
@@ -896,7 +915,7 @@ async function afterLogin(r){
   if(btn){btn.disabled=false;btn.textContent='Kirish';}
 }
 async function doLogout(){
-  if(!confirm('Tizimdan chiqasizmi?'))return;
+  if(!(await askConfirm('Tizimdan chiqasizmi?',{yes:'Ha, chiqaman'})))return;
   try{ await cloudSave(); }catch(e){}
   try{ if(SB) await SB.auth.signOut(); }catch(e){}
   location.reload();
@@ -934,7 +953,7 @@ async function tgGetCode(){
 /* Ulanishni uzish */
 async function tgUnlink(){
   if(!isSuper){ toast("Bu amal faqat dastur operatoriga ruxsat etilgan.",false); return; }
-  if(!confirm('Telegram uzilsinmi?\n\nKirish kodlari va hisobotlar kelmay qoladi.')) return;
+  if(!(await askConfirm('Telegram uzilsinmi?\n\nKirish kodlari va hisobotlar kelmay qoladi.',{danger:true,yes:'Ha, uzilsin'}))) return;
   try{ await tgCall('unlink'); tgLinked=false; tgCode=''; render();
     toast('Telegram uzildi',true); }
   catch(e){ toast('Xato: '+(e.message||''),false); }
@@ -5132,7 +5151,7 @@ function defaultRooms(count){
 /* Boshqa mehmonxonaga o'tish */
 async function switchHotel(id,name){
   if(!isSuper) return;
-  if(!confirm(`"${name}" mehmonxonasiga o'tasizmi?\n\nJoriy ma'lumot saqlanadi, keyin yangisi yuklanadi.`)) return;
+  if(!(await askConfirm(`"${name}" mehmonxonasiga o'tasizmi?\n\nJoriy ma'lumot saqlanadi, keyin yangisi yuklanadi.`,{yes:'Ha, o\'taman'}))) return;
   try{ await cloudSave(); }catch(e){}
   const h=allHotels.find(x=>x.id===id)||{};
   HOTEL_ID=id; myHotel=id; myHotelName=name;
@@ -5174,7 +5193,7 @@ async function toggleHotel(id,turnOn){
   if(!isSuper||!SB) return;
   const h=allHotels.find(x=>x.id===id); if(!h) return;
   if(!turnOn && id===HOTEL_ID){ toast('Hozir shu mehmonxonadasiz — avval boshqasiga o\'ting.',false); return; }
-  if(!confirm(turnOn?`"${h.name}" yoqilsinmi?`:`"${h.name}" o'chirilsinmi?\n\nXodimlari kira olmaydi (ma'lumot o'chmaydi).`)) return;
+  if(!(await askConfirm(turnOn?`"${h.name}" yoqilsinmi?`:`"${h.name}" o'chirilsinmi?\n\nXodimlari kira olmaydi (ma'lumot o'chmaydi).`,{danger:!turnOn,yes:turnOn?'Ha, yoqilsin':'Ha, o\'chirilsin'}))) return;
   try{
     const {error}=await SB.from('hotels').update({active:turnOn}).eq('id',id);
     if(error) throw error;
@@ -5200,9 +5219,23 @@ async function assignUser(){
 function renderDashboard(){
   const m=metrics();
   const wkLabels=['Yak','Dush','Sesh','Chor','Pay','Jum','SHAN'];
-  const wkData=[3.1,4.2,3.8,5.1,4.6,6.2,4.9];
-  const wkMax=Math.max(...wkData);
-  const wk=wkLabels.map((l,i)=>`<div class="b ${i===6?'today':''}"><div class="vv">${wkData[i]}</div><div class="f" style="height:${wkData[i]/wkMax*100}%"></div><div class="lb">${l}</div></div>`).join('');
+  /* ⬅️ TUZATISH: haftalik grafik endi REAL — shu hafta (Yak→Shan) har kunning xona tushumi (mln so'm) */
+  const wkStart=stripTime(new Date(base.getTime()-base.getDay()*DAY));   // shu hafta yakshanbasi
+  const wkRev=Array(7).fill(0);
+  stays.forEach(s=>{
+    if(s.status==='canceled') return;
+    const n=Math.max(1,nights(s));
+    const rates=(s.rates&&s.rates.length)?s.rates:Array(n).fill(Math.round((s.price||0)/n));
+    for(let i=0;i<n;i++){
+      const dMs=stripTime(new Date(stripTime(s.inDate).getTime()+i*DAY)).getTime();
+      const idx=Math.round((dMs-wkStart.getTime())/DAY);
+      if(idx>=0 && idx<7) wkRev[idx]+=(+rates[i]||0);
+    }
+  });
+  const wkData=wkRev.map(v=>Math.round(v/1e6*10)/10);   // mln so'm, 1 kasr
+  const wkMax=Math.max(1,...wkData);
+  const wkToday=base.getDay();
+  const wk=wkLabels.map((l,i)=>`<div class="b ${i===wkToday?'today':''}"><div class="vv">${wkData[i]}</div><div class="f" style="height:${wkData[i]/wkMax*100}%"></div><div class="lb">${l}</div></div>`).join('');
 
   const arrList=m.arrivals.length?m.arrivals.map(s=>`<div class="arr-item" onclick="openFolio('${s.id}')">
       <div class="rm">${s.room}</div><div class="who"><b>${esc(s.firstName)} ${esc(s.lastName)}</b><span>${esc(s.company)} · ${nights(s)} tun</span></div>
@@ -5263,6 +5296,8 @@ function renderDashboard(){
           <button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" onclick="go('housekeeping')">Barchasi</button></div>${hk}</div>
       </div>
     </div>
+    <div class="panel"><div class="panel-h"><h3>Shu hafta — tushum</h3><span class="spacer"></span><span class="pill">mln so'm</span></div>
+      <div class="wk-chart" style="height:170px">${wk}</div><div style="height:14px"></div></div>
   </div>`;
 }
 
@@ -5580,14 +5615,14 @@ function addRoomRange(){
   toast(`${added} ta xona qo'shildi${skipped?` (${skipped} tasi bor edi)`:''} ✓`,true);
 }
 /* Xonani o'chirish — yashovchisi bo'lsa RUXSAT YO'Q */
-function delRoom(i){
+async function delRoom(i){
   if(!isSuper){ toast("Bu amal faqat dastur operatoriga ruxsat etilgan.",false); return; }
   if(!roomsGuard()) return;
   const r=rooms[i]; if(!r) return;
   const live=stays.filter(s=>s.room===r.n && s.status!=='canceled' && s.status!=='out');
   if(live.length){ toast(`${r.n}-xonada ${live.length} ta bron bor — avval ularni ko'chiring yoki chiqaring.`,false); return; }
   const old=stays.filter(s=>s.room===r.n).length;
-  if(!confirm(`${r.n}-xona o'chirilsinmi?${old?`\n\n⚠️ Bu xonaning ${old} ta eski (arxiv) yozuvi bor — ular saqlanadi, lekin shaxmatkada ko'rinmaydi.`:''}`)) return;
+  if(!(await askConfirm(`${r.n}-xona o'chirilsinmi?${old?`\n\n⚠️ Bu xonaning ${old} ta eski (arxiv) yozuvi bor — ular saqlanadi, lekin shaxmatkada ko'rinmaydi.`:''}`,{danger:true,yes:'Ha, o\'chirilsin'}))) return;
   rooms.splice(i,1);
   lastFingerprint=''; saveState(); render();
   toast(`${r.n}-xona o'chirildi`,true);
@@ -6313,11 +6348,33 @@ function saveState(){
 
 /* --- Boshqa admin o'zgartirsa — 30 soniyada bir tekshiradi (o'zimizniki hisobga olinmaydi) --- */
 let subTick=0;   // obunani har 10-aylanishda (~5 daqiqa) tekshiramiz
+/* ⬅️ TUZATISH: sinxron tekshiruvi alohida funksiyada — interval ham, oyna fokusi ham chaqiradi */
+async function syncNow(){
+  // modal ochiq / saqlash kutilmoqda / band bo'lsa — tegmaymiz
+  if(!SB||cloudBusy||savePending||document.getElementById('regOverlay')||document.getElementById('folioOverlay')||document.getElementById('actOverlay')) return;
+  try{
+    const {data:st}=await SB.from('settings').select('data').eq('hotel_id',HOTEL_ID).maybeSingle();
+    const srvAt=(st&&st.data&&st.data.savedAt)||0;
+    if(srvAt>lastSavedAt+2000){   // faqat BOSHQA kimdir o'zgartirgan bo'lsa
+      const gw=document.querySelector('.gantt-wrap');
+      const gTop=gw?gw.scrollTop:0, gLeft=gw?gw.scrollLeft:0, winY=window.scrollY||0;
+      await cloudLoad(); render();
+      setTimeout(()=>{
+        const gw2=document.querySelector('.gantt-wrap');
+        if(gw2){ gw2.scrollTop=gTop; gw2.scrollLeft=gLeft; }
+        window.scrollTo(0,winY);
+      },30);
+      toast('Boshqa xodim o\'zgarish kiritdi — yangilandi.',true);
+    }
+  }catch(e){}
+}
+let _sbFocusBound=false;
 function startCloudSync(){
   clearInterval(syncTimer);
+  // ⬅️ TUZATISH: 30s → 12s (ikki xodim to'qnashuvi kamayadi)
   syncTimer=setInterval(async()=>{
-    // 🔒 Obuna nazorati — ish paytida o'chirilsa ham chiqarib yuboradi
-    if(SB && !isSuper && (++subTick % 10 === 0)){
+    // 🔒 Obuna nazorati — ~5 daqiqada bir (25 × 12s)
+    if(SB && !isSuper && (++subTick % 25 === 0)){
       try{
         const {data:h}=await SB.from('hotels').select('active,name').eq('id',HOTEL_ID).maybeSingle();
         if(h && h.active===false){
@@ -6328,25 +6385,14 @@ function startCloudSync(){
         }
       }catch(e){}
     }
-    // modal ochiq / saqlash kutilmoqda / band bo'lsa — tegmaymiz
-    if(!SB||cloudBusy||savePending||document.getElementById('regOverlay')||document.getElementById('folioOverlay')||document.getElementById('actOverlay')) return;
-    try{
-      const {data:st}=await SB.from('settings').select('data').eq('hotel_id',HOTEL_ID).maybeSingle();
-      const srvAt=(st&&st.data&&st.data.savedAt)||0;
-      if(srvAt>lastSavedAt+2000){   // faqat BOSHQA kimdir o'zgartirgan bo'lsa
-        // sahifa joyini eslab qolamiz — yuqoriga sakramasin
-        const gw=document.querySelector('.gantt-wrap');
-        const gTop=gw?gw.scrollTop:0, gLeft=gw?gw.scrollLeft:0, winY=window.scrollY||0;
-        await cloudLoad(); render();
-        setTimeout(()=>{
-          const gw2=document.querySelector('.gantt-wrap');
-          if(gw2){ gw2.scrollTop=gTop; gw2.scrollLeft=gLeft; }
-          window.scrollTo(0,winY);
-        },30);
-        toast('Boshqa xodim o\'zgarish kiritdi — yangilandi.',true);
-      }
-    }catch(e){}
-  },30000);
+    syncNow();
+  },12000);
+  // ⬅️ TUZATISH: oyna fokusга/ko'rinishга kelganда DARROV sinxron — kutmaydi
+  if(!_sbFocusBound){
+    _sbFocusBound=true;
+    document.addEventListener('visibilitychange',()=>{ if(!document.hidden) syncNow(); });
+    window.addEventListener('focus',()=>{ syncNow(); });
+  }
 }
 
 /* ===== BIR MARTALIK TOZA START — hamma test o'chadi, 1 ta haqiqiy bron qoladi ===== */
@@ -6373,11 +6419,11 @@ async function seedCleanStart(){
   }catch(e){ toast('Tozalashda xato: '+(e.message||''),false); }
 }
 
-function resetState(){
+async function resetState(){
   if(!isSuper){ toast("Bu amal faqat dastur operatoriga ruxsat etilgan.",false); return; }
   if(role!=='manager'){ toast('Bu amalni faqat menejer bajaradi.',false); return; }
-  if(!confirm("SERVERDAGI barcha ma'lumot o'chadi:\n• Mehmonlar va bronlar\n• To'lovlar\n• ADMIN NAZORATI JURNALI\n\nBu qaytarib bo'lmaydi! Davom etasizmi?")) return;
-  if(!confirm("Ishonchingiz komilmi? Nazorat jurnali ham o'chadi.")) return;
+  if(!(await askConfirm("SERVERDAGI barcha ma'lumot o'chadi:\n• Mehmonlar va bronlar\n• To'lovlar\n• ADMIN NAZORATI JURNALI\n\nBu qaytarib bo'lmaydi! Davom etasizmi?",{danger:true,yes:'Ha, davom etaman'}))) return;
+  if(!(await askConfirm("Ishonchingiz komilmi? Nazorat jurnali ham o'chadi.",{danger:true,yes:'Ha, o\'chirilsin'}))) return;
   (async()=>{
     try{
       await SB.from('stays').delete().eq('hotel_id',HOTEL_ID);
