@@ -15,9 +15,6 @@
   --paper:#e8e6e1; --muted:#8896a8; --muted-2:#5f6d80;
   --ok:#4fa97a; --ok-bg:rgba(79,169,122,.12);
   --bad:#d9635c; --bad-bg:rgba(217,99,92,.12);
-  /* 🔧 --red* — payWarnCard() va resetCard() shularni ishlatadi, lekin e'lon qilinmagan edi
-     (natijada muddati o'tgan to'lov ogohlantirishi va "hammasini o'chirish" tugmasi qizil chiqmasdi) */
-  --red:#d9635c; --red-bg:rgba(217,99,92,.12); --red-ink:#e2867f;
   --r:10px;
 }
 *{margin:0;padding:0;box-sizing:border-box}
@@ -137,7 +134,6 @@ tr:last-child td{border-bottom:none}
       <div class="gate-sub" style="margin:2px 0 0">Operator paneli</div>
     </div>
     <div class="rack">
-      <button class="hook" onclick="showOverview()" style="color:var(--brass);font-weight:600;margin-bottom:10px;display:block;width:100%;text-align:left">📊 Umumiy ko'rinish</button>
       <div class="rack-label">Mehmonxonalar</div>
       <div id="rack"></div>
       <button class="hook" onclick="showNewHotel()" style="color:var(--brass);font-weight:600;margin-top:6px">+ Yangi mehmonxona</button>
@@ -267,15 +263,13 @@ function drawHotel(){
   $('main').innerHTML=`
     <div class="page-h">
       <div>
-        <h1>${esc(h.name)} <button class="btn ghost sm" onclick="renameHotel()" style="vertical-align:middle;margin-left:8px">✏️ Nomni o'zgartirish</button></h1>
+        <h1>${esc(h.name)}</h1>
         <div class="sub mono">${esc(h.id)} · ${h.rooms||0} xona</div>
       </div>
       <div class="spacer"></div>
       <span class="tag ${h.active===false?'off':'ok'}" style="align-self:center">${h.active===false?"O'chirilgan":'Faol'}</span>
       <button class="btn ghost sm" onclick="toggleHotel()">${h.active===false?'Yoqish':"O'chirish"}</button>
     </div>
-
-    ${payWarnCard()}
 
     <div class="card">
       <div class="card-h"><h2>Xodimlar (${staff.length})</h2></div>
@@ -312,93 +306,39 @@ function drawHotel(){
 
     ${roomCard()}
 
-    ${payCard()}
-
-    ${resetCard()}`;
+    ${payCard()}`;
   if(lastTag) drawTag();
-}
-
-/* ── 💰 to'lov ogohlantirishi (yuqorida) ── */
-function payWarnCard(){
-  const h=sel; if(!h) return '';
-  const dl=h.days_left;
-  if(dl===null||dl===undefined){
-    return `<div class="card" style="border-color:var(--line)">
-      <div class="card-b" style="display:flex;align-items:center;gap:10px;padding:14px 20px">
-        <span style="font-size:20px">💤</span>
-        <div style="font-size:13px;color:var(--muted)">Hali to'lov yozilmagan. Birinchi to'lovni pastdagi «To'lovlar» bo'limidan yozing.</div>
-      </div></div>`;
-  }
-  let bg='var(--panel-2)', ic='✅', txt='', col='var(--muted)';
-  if(dl<0){ bg='var(--red-bg)'; ic='🔴'; col='var(--red-ink)';
-    txt=`<b>To'lov muddati ${Math.abs(dl)} kun oldin o'tган!</b> Bu mehmonxona qarzdor. Keyingi to'lov: ${dmy(h.next_due)}.`; }
-  else if(dl<=5){ bg='var(--red-bg)'; ic='⚠️'; col='var(--red-ink)';
-    txt=`<b>To'lovga ${dl} kun qoldi!</b> Keyingi to'lov sanasi: ${dmy(h.next_due)}. Mijozни ogohlantiring.`; }
-  else if(dl<=10){ bg='#3a2f12'; ic='🟡'; col='var(--brass)';
-    txt=`To'lovга ${dl} kun qoldi. Keyingi to'lov: ${dmy(h.next_due)}.`; }
-  else { txt=`Keyingi to'lov ${dl} kundan keyin (${dmy(h.next_due)}). Oxirgi to'lov: ${dmy(h.last_pay.paid_at)}.`; }
-  return `<div class="card" style="border-color:${dl<=5?'var(--red)':'var(--line)'}">
-    <div class="card-b" style="display:flex;align-items:center;gap:12px;padding:16px 20px">
-      <span style="font-size:24px">${ic}</span>
-      <div style="font-size:13.5px;color:${col};line-height:1.5">${txt}</div>
-    </div></div>`;
-}
-
-/* ── 🗑 mehmonxonani tozalash (pastda, xavfli) ── */
-function resetCard(){
-  const h=sel; if(!h) return '';
-  return `
-    <div class="card" style="border-color:var(--red)">
-      <div class="card-h"><h2 style="color:var(--red-ink)">🗑 Mehmonxonani tozalash</h2></div>
-      <div class="card-b">
-        <div class="hint" style="margin:0 0 14px">
-          Bu mehmonxonaning <b>barcha broni, mehmoni, to'lovi va nazorat jurnali</b> butunlay o'chadi.
-          Xonalar, tariflar va xodimlar <b>qoladi</b>. Dastur toza holatda, boshdan boshlanadi.<br>
-          <b style="color:var(--red-ink)">⚠️ Bu qaytarib bo'lmaydi.</b> Yangi mijozga topshirishdan oldin ishlatiladi.
-        </div>
-        <button class="btn danger" onclick="resetHotel()">Bu mehmonxonani tozalash</button>
-      </div>
-    </div>`;
-}
-async function renameHotel(){
-  if(!sel) return;
-  const nn=prompt("Mehmonxona yangi nomi:", sel.name);
-  if(nn===null) return;
-  const name=nn.trim();
-  if(!name){ toast("Nom bo'sh bo'lmasin","bad"); return; }
-  if(name===sel.name) return;
-  try{ await call('hotel-rename',{id:sel.id, name}); toast("Nom o'zgartirildi","good"); await loadHotels(sel.id); }
-  catch(e){ toast(e.message,'bad'); }
-}
-async function resetHotel(){
-  if(!sel) return;
-  if(!confirm(`"${sel.name}" TOZALANSINMI?\\n\\n• Barcha bron va mehmon o'chadi\\n• Barcha to'lov o'chadi\\n• Nazorat jurnali o'chadi\\n\\nXonalar va xodimlar qoladi.\\nBu QAYTARIB BO'LMAYDI!`)) return;
-  const word=prompt("Tasdiqlash uchun katta harflar bilan TOZALASH deb yozing:");
-  if(word!=='TOZALASH'){ toast("Bekor qilindi (tasdiq so'zi noto'g'ri)","bad"); return; }
-  try{
-    await call('hotel-reset',{id:sel.id, confirm:'TOZALASH'});
-    toast('Mehmonxona tozalandi ✓','good');
-    await loadHotels(sel.id);
-  }catch(e){ toast(e.message,'bad'); }
 }
 
 /* ── 📅 boshlanish sanasi ── */
 function startCard(){
   const h=sel; if(!h) return '';
   const sd=h.start_date||'';
-  const started=h.started;
+  if(h.started){
+    return `
+      <div class="card">
+        <div class="card-h"><h2>📅 Dastur boshlangan sana</h2><span class="spacer"></span>
+          <span class="tag off">🔒 qulflangan</span></div>
+        <div class="card-b">
+          <div class="mono" style="font-size:20px;font-weight:700;color:var(--brass)">${sd?dmy(sd):'—'}</div>
+          <div class="hint">Bu mehmonxona allaqachon ish boshlagan, shuning uchun sana o'zgartirilmaydi.
+            Agar baribir kerak bo'lsa — dasturga o'zingiz kirib «Serverni tozalash» qiling, shundan keyin sana ochiladi.
+            <b>Diqqat: tozalash barcha mehmon va to'lov ma'lumotini o'chiradi.</b></div>
+        </div>
+      </div>`;
+  }
   return `
     <div class="card" style="border-color:var(--brass-dim)">
       <div class="card-h"><h2>📅 Dastur qaysi kundan boshlansin</h2><span class="spacer"></span>
-        ${started?`<span class="tag ok" style="background:var(--panel-2);color:var(--muted)">ishlab turibdi</span>`:`<span class="tag ok">hali boshlanmagan</span>`}
-      </div>
+        <span class="tag ok">hali boshlanmagan</span></div>
       <div class="card-b">
         <div class="grid3">
           <div class="field" style="margin:0"><label>Boshlanish sanasi</label>
             <input id="sdInp" type="date" value="${sd}"></div>
         </div>
         <button class="btn" id="sdBtn" onclick="saveStart()" style="margin-top:12px">Sanani saqlash</button>
-        <div class="hint">Dastur shu kundan ish boshlaydi. ${started?'Bu mehmonxona ishlab turibdi \u2014 sanani o\'zgartirsangiz, dastur o\'sha kunga suriladi (ehtiyot bo\'ling, hisobotlar shunga bog\'liq).':'Mijozning admini birinchi marta kirganda dastur shu kundan boshlanadi.'}</div>
+        <div class="hint">Mijozning admini birinchi marta kirganda dastur shu kundan boshlanadi.
+          Shundan keyin sana <b>qulflanadi</b> va faqat nochnoy audit bilan oldinga suriladi.</div>
       </div>
     </div>`;
 }
@@ -778,63 +718,6 @@ async function toggleHotel(){
 }
 
 /* ── yangi mehmonxona ── */
-/* ── 📊 Umumiy ko'rinish — hamma mehmonxona bir jadvalda ── */
-function showOverview(){
-  sel=null;
-  document.querySelectorAll('#rack .rack-item').forEach(x=>x.classList.remove('active'));
-  const list=[...hotels].sort((a,b)=>(a.days_left??9999)-(b.days_left??9999));
-
-  const rows=list.map(h=>{
-    const dl=h.days_left;
-    let payCell, payTag;
-    if(dl===null||dl===undefined){
-      payCell='<span style="color:var(--muted)">to\'lov yo\'q</span>'; payTag='';
-    } else if(dl<0){
-      payCell=`<span style="color:var(--red-ink);font-weight:600">${Math.abs(dl)} kun o'tdi</span>`;
-      payTag='<span class="tag off">🔴 qarzdor</span>';
-    } else if(dl<=5){
-      payCell=`<span style="color:var(--red-ink);font-weight:600">${dl} kun qoldi</span>`;
-      payTag='<span class="tag off">⚠️ yaqin</span>';
-    } else {
-      payCell=`<span style="color:var(--muted)">${dl} kun qoldi</span>`; payTag='';
-    }
-    return `<tr onclick="openHotel('${esc(h.id)}')" style="cursor:pointer">
-      <td><b>${esc(h.name)}</b> ${payTag}<div class="mono" style="font-size:11px;color:var(--muted-2)">${esc(h.id)}</div></td>
-      <td>${h.active===false?'<span class="tag off">o\'chirilgan</span>':'<span class="tag ok">faol</span>'}</td>
-      <td style="white-space:nowrap">${h.start_date?dmy(h.start_date):'—'}</td>
-      <td style="white-space:nowrap">${h.last_pay?dmy(h.last_pay.paid_at):'—'}</td>
-      <td style="white-space:nowrap">${h.last_pay?money(h.last_pay.amount,h.last_pay.currency):'—'}</td>
-      <td style="white-space:nowrap">${h.next_due?dmy(h.next_due):'—'}</td>
-      <td style="white-space:nowrap">${payCell}</td>
-    </tr>`;
-  }).join('');
-
-  // hisob: nechta qarzdor, nechta yaqin
-  const overdue=list.filter(h=>h.days_left!=null && h.days_left<0).length;
-  const soon=list.filter(h=>h.days_left!=null && h.days_left>=0 && h.days_left<=5).length;
-
-  $('main').innerHTML=`
-    <div class="page-h"><div><h1>📊 Umumiy ko'rinish</h1>
-      <div class="sub">Jami ${list.length} ta mehmonxona</div></div></div>
-
-    ${(overdue||soon)?`<div class="card" style="border-color:var(--red)">
-      <div class="card-b" style="display:flex;gap:20px;flex-wrap:wrap;padding:16px 20px">
-        ${overdue?`<div style="color:var(--red-ink)">🔴 <b>${overdue}</b> ta qarzdor (muddat o'tgan)</div>`:''}
-        ${soon?`<div style="color:var(--red-ink)">⚠️ <b>${soon}</b> ta to'lovi yaqin (5 kun ichida)</div>`:''}
-      </div></div>`:''}
-
-    <div class="card">
-      <div class="tbl-wrap"><table>
-        <thead><tr>
-          <th>Mehmonxona</th><th>Holat</th><th>Boshlagan</th>
-          <th>Oxirgi to'lov</th><th>Summa</th><th>Keyingi to'lov</th><th>Qolgan</th>
-        </tr></thead>
-        <tbody>${rows||'<tr><td colspan="7" class="empty">Mehmonxona yo\'q</td></tr>'}</tbody>
-      </table></div>
-      <div class="card-b"><div class="hint" style="margin:0">Qatorga bosing — o'sha mehmonxona sahifasi ochiladi. Ro'yxat to'lov yaqinligi bo'yicha saralangan (eng shoshilinch tepada).</div></div>
-    </div>`;
-}
-
 function showNewHotel(){
   sel=null; drawRack(); lastTag=null;
   $('main').innerHTML=`
