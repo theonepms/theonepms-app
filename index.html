@@ -38,7 +38,7 @@ html.dark .g-cell{background:transparent}
 html.dark .g-cell.past{background:repeating-linear-gradient(45deg,#141b28,#141b28 6px,#1a2230 6px,#1a2230 12px)}
 html.dark .g-cell.today{background:#17233a}
 html.dark .g-dayh.today{background:#17233a;color:var(--brand-ink)}
-html.dark .resv{box-shadow:0 0 0 1.5px #171e2b,0 1px 3px rgba(0,0,0,.5)}
+html.dark .resv{box-shadow:0 0 0 2.5px #171e2b,0 1px 3px rgba(0,0,0,.5)}
 html.dark input,html.dark select,html.dark textarea{background:var(--panel-2);color:var(--txt);border-color:var(--line)}
 .toptools{display:flex;gap:6px;margin-right:10px}
 .ttbtn{padding:6px 11px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--txt-2);font-size:12px;font-weight:600;transition:.12s}
@@ -261,7 +261,7 @@ html.dark .folio-menu button{color:var(--txt)}
 .switch input:checked + .sl{background:var(--brand)}
 .switch input:checked + .sl:before{transform:translateX(18px)}
 .lane{display:flex;flex-direction:column;gap:2px;padding:2px}
-.resv{border-radius:6px;padding:2px 7px;font-size:11px;font-weight:600;color:#fff;cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;transition:.12s;position:absolute;z-index:3;box-shadow:0 0 0 1.5px #fff,0 1px 3px rgba(0,0,0,.14)}
+.resv{border-radius:6px;padding:2px 7px;font-size:11px;font-weight:600;color:#fff;cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;transition:.12s;position:absolute;z-index:3;box-shadow:0 0 0 2.5px #fff,0 1px 3px rgba(0,0,0,.14)}
 .resv:hover{filter:brightness(1.06);box-shadow:0 2px 8px rgba(0,0,0,.18)}
 .resv small{opacity:.85;font-weight:500}
 .r-book{background:var(--amber)}
@@ -2458,8 +2458,9 @@ function laneFor(room){
                     .sort((a,b)=>stayStartMs(a)-stayStartMs(b));
   const canceled=stays.filter(s=>s.room===room && s.status==='canceled');
 
-  /* 1) KUNDUZGILAR — kun bo'yicha guruh, har qatorga 4 tadan */
-  const duList=active.filter(s=>isDayUseOut(s));
+  /* 1) KUNDUZGILAR — kun bo'yicha guruh, har qatorga 4 tadan.
+     ⬅️ TUZATISH: barcha kunduzgi (chiqib ketgan/ichkarida/bron) bir tizimda — ustma-ust tushmaydi */
+  const duList=active.filter(s=>isDayUse(s));
   const duByDay={};
   duList.forEach(s=>{ const k=ymd(s.inDate); (duByDay[k]=duByDay[k]||[]).push(s); });
   let duLanes=0;
@@ -2473,7 +2474,7 @@ function laneFor(room){
      To'qnashsa ham yangi qavat OCHILMAYDI — 3-bosqichda yonma-yon joy bo'linadi,
      o'rtada kichik bo'shliq qoladi. Bir chiziqda, tekis turadi. */
   const laneEnds=[];
-  active.filter(s=>!isDayUseOut(s)).forEach(s=>{
+  active.filter(s=>!isDayUse(s)).forEach(s=>{   // ⬅️ TUZATISH: faqat ko'p tunlik oddiy bronlar
     s._lane=0;                    // ⬅️ hammasi bitta qatorda
     laneEnds[0]=0;
   });
@@ -2544,30 +2545,31 @@ function renderGanttRows(){
     const geo=[];
     // "Bir xil kun" holati uchun: har kunda nechta kunduzgi chiqish borligini sanaymiz
     const duCountByDay={};
-    list.forEach(x=>{ if(isDayUseOut(x)){ const di=Math.round((stripTime(x.inDate)-ganttStart)/DAY); duCountByDay[di]=(duCountByDay[di]||0)+1; } });
+    list.forEach(x=>{ if(isDayUse(x)){ const di=Math.round((stripTime(x.inDate)-ganttStart)/DAY); duCountByDay[di]=(duCountByDay[di]||0)+1; } });
     list.forEach(s=>{
       const dayIdx=Math.round((stripTime(s.inDate)-ganttStart)/DAY);
       const span=Math.max(1,Math.round((stripTime(s.outDate)-stripTime(s.inDate))/DAY));
       const du=isDayUse(s);
-      const coF=du?0:0.42;
+      const coF=du?0:0.20;   /* ⬅️ TUZATISH: chiqish kunidagi "ertalabki dum" 20% (yangi check-in 30% bilan mos, ustma-ust bo'lmaydi) */
       const earlyF=s.earlyIn?0.35:0, lateF=s.lateOut?0.5:0;
       const turn=stays.some(x=>x.room===s.room && x.id!==s.id && x.status!=='canceled' && stripTime(x.outDate).getTime()===stripTime(s.inDate).getTime());
       // Bir xil kunda kunduzgi chiqishlar bo'lsa — oddiy bron ¼ bo'laklardan KEYIN boshlanadi (ustma-ust bo'lmasin)
       const duOffset=du?0:Math.min(3,duCountByDay[dayIdx]||0)*0.25;
-      const startInset=Math.max((turn&&!du)?0.55:0, duOffset);
-      if(du && s.status==='out'){
-        /* CHIQIB KETGAN kunduzgi — quyida kun bo'yicha ¼ ga bo'linadi */
+      const startInset=Math.max((turn&&!du)?0.40:0, duOffset);   /* ⬅️ TUZATISH: yangi check-in 40% dan boshlanadi (chiqayotgan 20% bilan orada 20% bo'shliq — ulanib ko'rinmaydi) */
+      if(du){
+        /* ⬅️ TUZATISH: BARCHA kunduzgi bron (chiqib ketgan/ichkarida/bron) — bitta ¼ tizimida.
+           Kelish vaqti tartibida kun teng bo'laklarga bo'linadi (quyida, 2-bosqichda).
+           'active' (check-in qilingan, hali chiqmagan) bo'lsa — shu kunning oxirgisi bo'lganda
+           keyingi kunga cho'ziladi (qachon ketishi noma'lum), boshqalarni bosmaydi. */
         const t1=hhToFrac(s.arrTime)||0;
-        geo.push({s, L:dayIdx+t1, R:dayIdx+t1+0.05, du:true, dayIdx, t1});
-      } else if(du){
-        /* HALI CHIQMAGAN kunduzgi — qachon ketishi noma'lum → keyingi kunga o'tib turadi */
-        const t1=hhToFrac(s.arrTime)||0;
-        geo.push({s, L:dayIdx+Math.min(t1,0.6), R:dayIdx+1+0.42, du:false});
+        geo.push({s, L:dayIdx+t1, R:dayIdx+t1+0.05, du:true, dayIdx, t1, active:s.status==='in'});
       } else if(s.status==='out'){
         /* CHIQIB KETGAN (oddiy) — chiziq REJADAGI chiqishgacha emas,
            HAQIQIY chiqish payti (checkoutDate + checkoutTime) da tugaydi → cho'zilmaydi */
         const coIdx=Math.round((stripTime(s.checkoutDate||s.outDate)-ganttStart)/DAY);
-        const coFrac=hhToFrac(s.checkoutTime||'12:00');
+        /* ⬅️ TUZATISH: chiqish soatidan QAT'I NAZAR chiziq doim 20% (kun to'lib ketmaydi).
+           Nechida chiqsa ham bir xil kichik bo'lak. Chiqish soati folio ichida saqlanadi. */
+        const coFrac=0.20;
         let Lc=dayIdx-earlyF+startInset;
         let Rc=coIdx+coFrac;
         if(Rc<=Lc) Rc=Lc+0.2;                 // minimal ko'rinadigan kenglik
@@ -2585,16 +2587,18 @@ function renderGanttRows(){
     Object.keys(duByDay).forEach(k=>{
       const arr=duByDay[k].sort((a,b)=>a.t1-b.t1);      // kelish vaqti bo'yicha
       const di=+k;
-      const perLane=Math.min(MAXPERLANE,arr.length);
       arr.forEach((g,i)=>{
         const lane=Math.floor(i/MAXPERLANE);
         const posInLane=i%MAXPERLANE;
-        const cntInLane=Math.min(MAXPERLANE,arr.length-lane*MAXPERLANE);
         const w=1/MAXPERLANE;          // har kunduzgi DOIM kunning ¼ qismi (1 ta bo'lsa ham)
         g.L=di+posInLane*w;
         g.R=di+(posInLane+1)*w;
         g.s._lane=lane;                                  // kerak bo'lsa pastki qavatga
       });
+      /* ⬅️ TUZATISH: shu kunning OXIRGI kunduzgisi AKTIV (check-in, hali chiqmagan) bo'lsa —
+         qachon ketishi noma'lum → keyingi kunga cho'ziladi. Oldingi ¼ bo'laklarni bosmaydi. */
+      const lastG=arr[arr.length-1];
+      if(lastG && lastG.active){ lastG.R=di+1+0.42; }
     });
 
     /* ══ 3) Oddiy bronlar bir qavatda to'qnashsa — joyni bo'lamiz ══ */
@@ -2609,7 +2613,7 @@ function renderGanttRows(){
         const cnt=j-i+1;
         if(cnt>1){
           // yonma-yon bo'linadi, o'rtada kichik bo'shliq ("nafas") qoladi
-          const GAP=0.08;                          // bronlar orasidagi bo'shliq (kun ulushida)
+          const GAP=0.14;                          // bronlar orasidagi bo'shliq (kun ulushida) — kattalashtirildi, yaqin bronlar ulanib ko'rinmaydi
           const minL=arr[i].L, total=maxR-minL;
           const w=(total-GAP*(cnt-1))/cnt;         // bo'shliqni chegirib, qolganini teng bo'lamiz
           for(let q=0;q<cnt;q++){
