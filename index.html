@@ -124,11 +124,11 @@ h1,h2,h3,h4{font-family:'Space Grotesk',Inter,sans-serif;font-weight:600;letter-
 #app.sb-collapsed{grid-template-columns:0 1fr}
 .side{transition:opacity .2s ease,padding .26s ease}
 #app.sb-collapsed .side{opacity:0;padding-left:0;padding-right:0;pointer-events:none;overflow:hidden}
-#sbToggle{position:fixed;top:80px;left:10px;z-index:1200;width:30px;height:30px;border-radius:8px;
+#sbToggle{position:fixed;top:56px;left:10px;z-index:1200;width:26px;height:26px;border-radius:8px;
   background:var(--panel,#fff);border:1px solid var(--line,#d6deea);color:var(--txt-2,#3a4557);
-  font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
-  box-shadow:0 2px 7px rgba(0,0,0,.14);transition:left .26s ease,background .15s ease}
-#sbToggle:hover{background:var(--panel-2,#eef2f8)}
+  font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 7px rgba(0,0,0,.14);opacity:.5;transition:left .26s ease,background .15s ease,opacity .15s ease}
+#sbToggle:hover{background:var(--panel-2,#eef2f8);opacity:1}
 .side{background:var(--ink);color:#c3ccdf;display:flex;flex-direction:column;padding:16px 12px}
 .side .brand{color:#fff;font-size:18px;padding:6px 8px 18px}
 .side .brand small{color:#7b88a6}
@@ -3154,7 +3154,11 @@ function openFolio(id,keepEdit){
       actBtns+=gGroup('🛏','Hisobga qo\'shish',[['doCharge','🧾 Xizmat qo\'shish'],['doServiceAdd','➕ Yashash qo\'shish']]);
       actBtns+=gbtn('openInvoice','🧾 '+t('invoice'));
     } else {
-      // ADMIN: chiqib ketgan mehmonning QARZINI yopa oladi + bugun chiqqan bo'lsa vastanavit
+      // ADMIN: bugun chiqqan (joriy kun) bo'lsa Izmenit + xizmat qo'shish; vozvrat/korreksiya — FAQAT menejer
+      if(coToday){
+        actBtns+=gbtn('openIzmenit','✏️ Izmenit (tuzatish)','warn');
+        actBtns+=gGroup('🛏','Hisobga qo\'shish',[['doCharge','🧾 Xizmat qo\'shish'],['doServiceAdd','➕ Yashash qo\'shish']]);
+      }
       if(balance(s)>0) actBtns+=gbtn('addFolioPay','₸ Qarzni to\'lash ('+money(balance(s))+')','primary');
       actBtns+=gbtn('openInvoice','🧾 '+t('invoice'));
     }
@@ -3232,8 +3236,8 @@ function openFolio(id,keepEdit){
           <div style="font-weight:700;font-size:13px;color:#6d28d9">🟣 Bu bron BEKOR QILINGAN</div>
           <div style="font-size:12px;color:var(--txt-2);margin-top:3px">
             ${s.canceledBy?s.canceledBy+' · ':''}${s.canceledAt||''}${s.canceledReason?' · 💬 '+s.canceledReason:''}</div>
-          ${role==='manager'?`<button class="btn btn-primary" style="margin-top:10px;padding:9px 18px;font-size:13px" onclick="doUncancel('${id}')">♻ Bekor qilishni qaytarish</button>`
-            :`<div style="font-size:11.5px;color:var(--txt-3);margin-top:8px">Tiklashni faqat menejer bajaradi.</div>`}
+          ${can('uncancel',s)?`<button class="btn btn-primary" style="margin-top:10px;padding:9px 18px;font-size:13px" onclick="doUncancel('${id}')">♻ Bekor qilishni qaytarish</button>`
+            :`<div style="font-size:11.5px;color:var(--txt-3);margin-top:8px">Tiklashni joriy kun bo'lsa admin, aks holda menejer bajaradi.</div>`}
         </div></div>`:''}
       ${(s.status!=='canceled')?`<div style="font-weight:600;font-size:13px;margin:18px 0 8px">${role==='owner'?'Hujjat':'Amallar (xona ichida)'}${(s.status==='out'&&role==='manager')?' — <span style="color:var(--red-ink)">menejer tiklash rejimi</span>':''}${role==='owner'?' <span style="font-size:11px;color:var(--brand-ink);background:#eef4ff;padding:2px 8px;border-radius:20px">👁 faqat ko\'rish</span>':''}</div>
       ${bookHint}
@@ -3364,9 +3368,12 @@ function can(action,s){
     case 'moveRoom':     return stayIsToday(s);    // xona — FAQAT joriy kun
     case 'extend':       return stayIsToday(s);    // muddat — faqat joriy kun, faqat uzaytirish
     case 'price':        return stayIsToday(s);    // narx — FAQAT joriy kun (eski kunlar qotgan)
-    case 'cashRefund':   return false;             // ⛔ kassadan pul qaytarish — menejer
-    case 'rebook':       return false;             // ⛔ kelish sanasi — menejer
-    case 'restore':      return false;             // ⛔ vastanavit — menejer
+    case 'cashRefund':   return false;             // ⛔ kassadan pul qaytarish — FAQAT menejer
+    case 'correct':      return false;             // ⛔ narx korreksiyasi (eski/qotgan narx) — FAQAT menejer
+    case 'rebook':       return stayIsToday(s);    // kelish sanasi — admin ham, faqat joriy kun
+    case 'restore':      return stayIsToday(s);    // vastanavit — admin ham, faqat joriy kun
+    case 'uncancel':     return stayIsToday(s);    // bekor qilishni qaytarish — admin ham, faqat joriy kun
+    case 'izmenit':      return stayIsToday(s);    // to'liq tahrir — admin ham, faqat joriy kun
     default:             return false;
   }
 }
@@ -3432,7 +3439,8 @@ function clashMsg(c, room){
   return `Xona ${room} band: ${c.who} (${fmtShort(c.from)}–${fmtShort(c.to)}). Boshqa xona yoki sana tanlang.`;
 }
 function doUncancel(id){
-  if(role!=='manager'){ denyMgr('Bekor qilishni qaytarish'); return; }
+  const s=stays.find(x=>x.id===id);
+  if(!can('uncancel',s)){ toast('Bekor qilishni qaytarish — joriy kun bo\'lsa admin, aks holda menejer bajaradi.',false); return; }
   openActionModal(id,'uncancel');
 }
 function doRefund(id){ openActionModal(id,'refund'); }   // admin uchun faqat "hisobdan olib tashlash" bo'limi ochiladi
@@ -3501,7 +3509,7 @@ function drawRestoreModal(){
   const free=rooms.filter(r=>r.n!==s.room && !stays.some(x=>x.status!=='canceled' && x.room===r.n
       && stayStartMs(x)<en-1000 && Math.max(stayEndMs(x),stayStartMs(x)+30*60000)>st+1000));
   const dayUseOut=new Date(stripTime(s.inDate));
-  const html=`<div class="modal-ov" id="actOverlay" onclick="if(event.target===this)closeAction()">
+  const html=`<div class="overlay" id="actOverlay" onclick="if(event.target===this)closeAction()">
     <div class="modal" style="max-width:520px">
       <div class="modal-h"><h3>♻ Vastanavit — xona band</h3><button class="x" onclick="closeAction()">✕</button></div>
       <div class="modal-b">
@@ -3551,7 +3559,8 @@ function commitRestore(){
    Sabab majburiy · nazorat jurnaliga QIZIL · shubhali amallarga · eski qiymat saqlanadi. */
 let izmenitState=null;
 function openIzmenit(id){
-  if(role!=='manager'){ toast('«Izmenit» (tuzatish) — faqat menejer bajaradi.',false); return; }
+  const s0=stays.find(x=>x.id===id);
+  if(!can('izmenit',s0)){ toast('«Izmenit» — joriy kun bo\'lsa admin, eski kun uchun faqat menejer bajaradi.',false); return; }
   const s=stays.find(x=>x.id===id); if(!s)return;
   let payIdx=-1;
   for(let i=s.payments.length-1;i>=0;i--){ if(s.payments[i].type==='pay'){ payIdx=i; break; } }
@@ -3581,7 +3590,7 @@ function drawIzmenit(){
       <span style="flex:1;font-size:13px${c.keep?'':';text-decoration:line-through;opacity:.5'}">${c.name}</span>
       <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="${c.amount}" oninput="izmenitState.charges[${i}].amount=+this.value" style="width:130px;padding:6px 8px;border:1.5px solid var(--line);border-radius:6px" ${c.keep?'':'disabled'}>
     </div>`).join('') : '<div class="mini-hint" style="padding:0">Xizmat yo\'q</div>';
-  const html=`<div class="modal-ov" id="izOverlay" onclick="if(event.target===this)closeIzmenit()">
+  const html=`<div class="overlay" id="izOverlay" onclick="if(event.target===this)closeIzmenit()">
     <div class="modal" style="max-width:560px">
       <div class="modal-h"><h3>✏️ Izmenit — ${esc(s.firstName)} ${esc(s.lastName)}</h3><button class="x" onclick="closeIzmenit()">✕</button></div>
       <div class="modal-b">
@@ -3942,10 +3951,7 @@ function commitAction(){
   if(a.kind==='extend'  && !can('extend',s)){   toast('Bu bron joriy kunga tegishli emas.',false); return; }
   if(a.kind==='refund'  && (a.rSel||'').startsWith('pay:') && !can('cashRefund',s)){
     denyMgr('Kassadan pul qaytarish'); return; }
-  if(a.kind==='extend' && role==='admin'){
-    const nn=+a.newNights||0;
-    if(nn<nights(s)){ toast('Muddatni QISQARTIRISH — buni faqat menejer bajaradi. Siz faqat uzaytira olasiz.',false); return; }
-  }
+  /* 🔓 Muddatni qisqartirish endi adminga ham ruxsat — faqat joriy kun (can('extend') stayIsToday'ni tekshiradi) */
   if(NEEDS_REASON.includes(a.kind) && !a.reason.trim()){ toast('Sababni yozing (majburiy).',false); return; }
   const R=a.reason?` · Sabab: ${esc(a.reason)}`:'';
   if(a.kind==='pay'){
@@ -4049,8 +4055,8 @@ function commitAction(){
     toast("Bron o'chirildi - shaxmatkada iz qolmadi ✓",true);
     closeAction(); closeFolio(); render(); return;
   } else if(a.kind==='uncancel'){
-    /* ♻ BEKOR QILISHNI QAYTARISH — faqat menejer */
-    if(role!=='manager'){ denyMgr('Bekor qilishni qaytarish'); return; }
+    /* ♻ BEKOR QILISHNI QAYTARISH — joriy kun bo'lsa admin ham, aks holda menejer */
+    if(!can('uncancel',s)){ toast('Bekor qilishni qaytarish — joriy kun bo\'lsa admin, aks holda menejer.',false); return; }
     const conf=findClash(s.room, s.inDate, s.checkoutDate||s.outDate, s.id);
     if(conf){
       toast(clashMsg(conf, s.room),false); return;
@@ -4485,7 +4491,8 @@ function shubhaAck(key){
   toast('Tekshirildi deb belgilandi ✓',true);
 }
 
-/* --- Har bir jurnal yozuvini baholaymiz --- */
+/* --- FAQAT vozvrat (pul qaytarish) + narx o'zgartirish — joriy va o'tgan kunlar.
+   Boshqa amallar ko'rsatilmaydi. Yozuvlar auditLog'dan keladi — hech qachon o'chmaydi. --- */
 function shubhaList(){
   const out=[];
   auditLog.forEach((a,idx)=>{
@@ -4494,38 +4501,11 @@ function shubhaList(){
     // OWNER hammasini, MENEJER faqat admin+o'zinikini ko'radi (owner amali menejerga kerak emas)
     if(role==='manager' && byRole==='owner') return;
     let lvl=null, why='';
-    // 🔴 YUQORI XAVF
-    if(/IZMENIT/i.test(txt)){ lvl='high'; why='Eski amal tuzatildi (izmenit)'; }
-    else if(/PUL QAYTARILDI/i.test(txt)){ lvl='high'; why='Kassadan pul chiqdi'; }
-    else if(/vastanavit|qayta tiklandi|BEKOR QILISHNI QAYTARISH/i.test(txt)){ lvl='high'; why='Yopilgan hisob qayta ochildi'; }
-    else if(/BRON BEKOR QILINDI/i.test(txt)){ lvl='high'; why='Yashagan mehmon bekor qilindi'; }
-    else if(/narx/i.test(txt) && /o'zgar|korreksiya|→/i.test(txt)){ lvl='high'; why='Narx o\'zgartirildi'; }
-    else if(/NARXI 0/i.test(txt)){ lvl='high'; why='0 narxli bron — bepul yashadi?'; }
-    else if(/SMENA FARQI/i.test(txt)){ lvl='high'; why='Kassada farq — pul yetmayapti yoki usul almashtirilgan'; }
-    else if(/XONA YOPILDI/i.test(txt)){ lvl='mid'; why='Xona ta\'mirga yopildi — sotilmaydi'; }
-    // 🟡 O'RTA XAVF
-    else if(/HISOBDAN OLIB TASHLANDI|HISOBDAN CHEGIRILDI/i.test(txt)){ lvl='mid'; why='Hisobdan summa olib tashlandi'; }
-    else if(/Bron o'chirildi/i.test(txt)){ lvl='mid'; why='Bron o\'chirildi'; }
-    else if(/Ma'lumot tahrirlandi/i.test(txt) && /Sherigi olib tashlandi|Ism:/i.test(txt)){ lvl='mid'; why='Mehmon ma\'lumoti o\'zgardi'; }
-    else if(/Erta chiqish|Kech chiqish/i.test(txt) && a.amount){ lvl='mid'; why='Muddat/narx o\'zgardi'; }
-    else if(/Xona ko'chirildi|ko'chirish/i.test(txt)){ lvl='mid'; why='Xona ko\'chirildi'; }
+    if(/PUL QAYTARILDI/i.test(txt)){ lvl='high'; why='Kassadan pul qaytarildi (vozvrat)'; }
+    else if(/narx/i.test(txt) && /o'zgar|korreksiya|→/i.test(txt)){ lvl='mid'; why='Narx o\'zgartirildi'; }
     if(!lvl) return;
     const key=(a.day||'')+'|'+(a.time||'')+'|'+(a.room||'')+'|'+txt.slice(0,40);
     out.push({key,idx,a,lvl,why,byRole});
-  });
-  // ⚠️ NARX 0, LEKIN PUL OLINGAN — jurnalda emas, bronning o'zida turgan xato
-  stays.forEach(s=>{
-    if(s.status==='canceled') return;
-    const p=paidSum(s);
-    if(p>0 && isZeroPriceStay(s)){
-      out.push({ key:'zero_'+s.id, idx:-1, lvl:'high',
-        why:'Narx 0, lekin pul olingan — hisob noto\'g\'ri',
-        byRole:'admin',
-        a:{ room:s.room, guest:(s.firstName||'')+' '+(s.lastName||''),
-            text:`⚠️ NARX 0, LEKIN ${money(p)} TO'LOV OLINGAN — 1 kunlik narx yozilmagan`,
-            amount:p, reason:'Narxni «💰 Narxni o\'zgartirish» bilan to\'g\'rilang',
-            by:'—', time:fmt(s.inDate), day:ymd(s.inDate), stayDate:fmt(s.inDate), type:'warn' } });
-    }
   });
   return out;
 }
@@ -4560,63 +4540,38 @@ function shubhaPatterns(list){
 
 function renderShubha(){
   if(role!=='manager' && role!=='owner') return `<div class="panel"><div class="empty-state">Bu bo'lim faqat menejer va egasi uchun.</div></div>`;
-  const all=shubhaList();
-  const pats=shubhaPatterns(all);
-  const openList=all.filter(x=>!ackedShubha[x.key]);
-  const shown=shubhaFilter==='all'?openList
-    :shubhaFilter==='high'?openList.filter(x=>x.lvl==='high')
-    :shubhaFilter==='mid'?openList.filter(x=>x.lvl==='mid')
-    :all.filter(x=>ackedShubha[x.key]);   // 'done'
-  const hi=openList.filter(x=>x.lvl==='high').length;
-  const md=openList.filter(x=>x.lvl==='mid').length;
-  const done=all.length-openList.length;
+  const all=shubhaList();   // faqat vozvrat + narx o'zgarishi (joriy va o'tgan kunlar)
+  const refunds=all.filter(x=>x.lvl==='high').length;   // vozvratlar
+  const prices=all.length-refunds;                       // narx o'zgarishlari
 
-  const rows=[...shown].reverse().map(x=>{
-    const a=x.a, ack=ackedShubha[x.key];
-    const col=x.lvl==='high'?'var(--red)':'var(--amber)';
-    const bg =x.lvl==='high'?'var(--red-bg)':'var(--amber-bg)';
-    const ink=x.lvl==='high'?'var(--red-ink)':'var(--amber-ink)';
-    const canAck = !ack && (role==='owner' || x.byRole!=='manager');
-    return `<div class="arr-item" style="border-left:4px solid ${col};background:${ack?'var(--panel-2)':bg};align-items:flex-start">
+  const rows=[...all].reverse().map(x=>{
+    const a=x.a, isRef=(x.lvl==='high');
+    const col=isRef?'var(--red)':'var(--amber)';
+    const bg =isRef?'var(--red-bg)':'var(--amber-bg)';
+    const ink=isRef?'var(--red-ink)':'var(--amber-ink)';
+    return `<div class="arr-item" style="border-left:4px solid ${col};background:${bg};align-items:flex-start">
       <div class="who" style="flex:1">
-        <b style="color:${ink}">${x.lvl==='high'?'🔴':'🟡'} ${x.why}</b>
-        <span style="display:block;margin-top:2px;color:var(--txt)">${a.text}</span>
-        <span style="display:block;margin-top:2px">Xona <b>${a.room}</b> · ${a.guest||'—'}${a.amount?` · <b>${money(a.amount)}</b>`:''}</span>
+        <b style="color:${ink}">${isRef?'↩ Vozvrat (pul qaytarildi)':'💰 Narx o\'zgartirildi'}</b>
+        <span style="display:block;margin-top:2px;color:var(--txt)">${esc(a.text)}</span>
+        <span style="display:block;margin-top:2px">Xona <b>${esc(a.room||'—')}</b> · ${esc(a.guest||'—')}${a.amount?` · <b>${money(a.amount)}</b>`:''}</span>
         <span style="display:block;margin-top:2px;color:var(--txt-3)">
-          ${/admin/i.test(a.by||'')?`<b style="color:var(--red-ink)">${a.by}</b>`:a.by} · ${a.time}
+          ${/admin/i.test(a.by||'')?`<b style="color:var(--red-ink)">${esc(a.by)}</b>`:esc(a.by)} · ${esc(a.time)}
           ${a.reason?` · 💬 ${esc(a.reason)}`:' · <i style="color:var(--red-ink)">sabab yozilmagan</i>'}</span>
-        ${ack?`<span style="display:block;margin-top:4px;color:var(--green-ink);font-size:11.5px">✓ Tekshirdi: ${ack.by} · ${ack.at}</span>`:''}
-      </div>
-      <div class="meta" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-        ${canAck?`<button class="btn btn-ghost" style="padding:6px 10px;font-size:12px" onclick="shubhaAck('${x.key.replace(/'/g,"\\'")}')">✓ Tekshirdim</button>`:''}
-        ${(!ack && !canAck)?`<span style="font-size:11px;color:var(--txt-3)">Owner tasdiqlaydi</span>`:''}
       </div></div>`;
   }).join('');
 
-  const patHtml=pats.length?`<div class="panel" style="margin-bottom:14px"><div class="panel-h"><h3>🔵 Naqsh (takrorlanuvchi xatti-harakat)</h3></div>
-    ${pats.map(p=>`<div class="arr-item" style="border-left:4px solid ${p.lvl==='high'?'var(--red)':'var(--amber)'}">
-      <div class="who"><span>${p.txt}</span></div></div>`).join('')}</div>`:'';
-
   return `<div class="hint" style="background:var(--red-bg);color:var(--red-ink)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-    <span>Bu yerda dastur <b>o'zi ajratgan</b> xavfli amallar. ${role==='owner'?'Siz <b>menejer va administrator</b> amallarini ko\'rasiz.':'Siz <b>administrator</b> amallarini tekshirasiz. O\'z amallaringizni faqat <b>Owner</b> yopadi.'}</span></div>
+    <span>Bu yerda faqat <b>pul vozvratlari</b> va <b>narx o'zgarishlari</b> ko'rsatiladi — joriy va o'tgan kunlar. Yozuvlar <b>hech qachon o'chmaydi</b>.</span></div>
   <div class="stats">
-    <div class="stat"><div class="l">🔴 Yuqori xavf</div><div class="v" style="color:var(--red-ink)">${hi}</div></div>
-    <div class="stat"><div class="l">🟡 O'rta xavf</div><div class="v" style="color:var(--amber-ink)">${md}</div></div>
-    <div class="stat"><div class="l">✓ Tekshirilgan</div><div class="v" style="color:var(--green-ink)">${done}</div></div>
+    <div class="stat"><div class="l">↩ Vozvratlar</div><div class="v" style="color:var(--red-ink)">${refunds}</div></div>
+    <div class="stat"><div class="l">💰 Narx o'zgarishlari</div><div class="v" style="color:var(--amber-ink)">${prices}</div></div>
     <div class="stat"><div class="l">Jami yozuv</div><div class="v">${all.length}</div></div>
   </div>
-  ${patHtml}
-  <div class="panel"><div class="panel-h"><h3>Shubhali amallar</h3><span class="spacer"></span>
-    <div class="seg">
-      <button class="${shubhaFilter==='all'?'on':''}" onclick="setShubhaFilter('all')">Hammasi (${openList.length})</button>
-      <button class="${shubhaFilter==='high'?'on':''}" onclick="setShubhaFilter('high')">🔴 ${hi}</button>
-      <button class="${shubhaFilter==='mid'?'on':''}" onclick="setShubhaFilter('mid')">🟡 ${md}</button>
-      <button class="${shubhaFilter==='done'?'on':''}" onclick="setShubhaFilter('done')">✓ ${done}</button>
-    </div>
+  <div class="panel"><div class="panel-h"><h3>Shubhali amallar — vozvrat va narx o'zgarishlari</h3><span class="spacer"></span>
     <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px;margin-left:8px" onclick="exportPageExcel()">⤓ Excel</button></div>
     ${rows||`<div class="empty-state" style="color:var(--green-ink)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 6L9 17l-5-5"/></svg>
-      ${shubhaFilter==='done'?'Hali hech narsa tekshirilmagan.':'Shubhali amal yo\'q — hammasi joyida.'}</div>`}
+      Hali vozvrat yoki narx o'zgarishi yo'q.</div>`}
   </div>`;
 }
 
@@ -5369,26 +5324,9 @@ function renderTolov(){
   const tab=(k,l)=>`<button class="${payFilter===k?'on':''}" onclick="setPayFilter('${k}')">${l}</button>`;
   const pbtn=(k,l)=>`<button class="${payPeriod.mode===k?'on':''}" onclick="setPeriod('${k}')">${l}</button>`;
 
-  /* Smena yopish paneli */
-  const bugungiSmena=shifts.find(x=>x.day===ymd(base));
-  const shiftPanel=`
-  <div class="panel" style="margin-bottom:14px"><div class="panel-h"><h3>💵 Smena — kassani tekshirish</h3><span class="spacer"></span>
-    ${bugungiSmena?`<span class="tag ${(bugungiSmena.dCash||bugungiSmena.dCard)?'':'paid'}" style="${(bugungiSmena.dCash||bugungiSmena.dCard)?'background:var(--red-bg);color:var(--red-ink)':''}">${(bugungiSmena.dCash||bugungiSmena.dCard)?'🚨 Farq bor':'✓ Yopilgan'}</span>`:''}
-    <button class="btn btn-primary" style="padding:8px 16px;font-size:13px;margin-left:8px" onclick="openShiftModal()">
-      ${bugungiSmena?'🔄 Qayta tekshirish':'💵 Smenani yopish'}</button></div>
-    <div class="mini-hint" style="padding:9px 16px;line-height:1.55">Kun oxirida kassadagi <b>haqiqiy naqd pulni</b> sanang va <b>terminal hisobotini</b> kiriting — dastur solishtiradi.</div>
-    ${shifts.length?`<table class="data"><thead><tr><th>Kun</th><th>Naqd: dastur</th><th>Naqd: haqiqatda</th><th>Karta: dastur</th><th>Karta: terminal</th><th>Natija</th><th>Kim</th></tr></thead><tbody>
-      ${shifts.slice(0,10).map(x=>{
-        const bad=(x.dCash||x.dCard);
-        return `<tr${bad?' style="background:var(--red-bg)"':''}>
-          <td><b>${x.day.split('-').reverse().join('.')}</b></td>
-          <td class="money">${money(x.cashExpect)}</td><td class="money">${money(x.cashReal)}</td>
-          <td class="money">${money(x.cardExpect)}</td><td class="money">${money(x.cardReal)}</td>
-          <td>${bad?`<b style="color:var(--red-ink)">naqd ${x.dCash>0?'+':''}${money(x.dCash)} · karta ${x.dCard>0?'+':''}${money(x.dCard)}</b>`:'<span style="color:var(--green-ink)">✓ teng</span>'}</td>
-          <td style="white-space:nowrap">${/admin/i.test(x.by)?`<b style="color:var(--red-ink)">${x.by}</b>`:x.by}</td></tr>`;
-      }).join('')}</tbody></table>`:''}
-  </div>`;
-  return shiftPanel + `
+  /* 🗑 "Smena — kassani tekshirish" paneli olib tashlandi (operator talabi bilan).
+     shifts massivi va nochnoy-audit hisoboti tegilmadi — faqat bu ko'rinuvchi panel olindi. */
+  return `
   <div class="panel"><div class="panel-h" style="flex-wrap:wrap;gap:10px">
     <h3>${P("Davr")}</h3>
     <div class="seg">${pbtn('today','Bugun')}${pbtn('week','7 kun')}${pbtn('month','Bu oy')}${pbtn('year','Bu yil')}</div>
@@ -5719,16 +5657,15 @@ function renderSettings(){
   return `<div style="max-width:760px">
     ${tgPanel}
     ${roomsPanel}
-    <div class="panel"><div class="panel-h"><h3>${P("Ma'lumot va zaxira")}</h3><span class="roleonly">Server</span></div>
+    ${isSuper?`<div class="panel"><div class="panel-h"><h3>${P("Ma'lumot va zaxira")}</h3><span class="roleonly">Server</span></div>
       <div class="panel-b" style="padding:16px 20px">
         <div class="arr-item"><div class="who"><b>☁️ Server (bulut baza)</b><span>Har o'zgarish <b>serverga</b> saqlanadi. Boshqa kompyuterdan kirsangiz ham, brauzer tozalansa ham — ma'lumot turadi. Bir necha admin bir vaqtda ishlay oladi.</span></div><span class="tag paid">Ulangan</span></div>
-        ${role==='manager'?`<div class="arr-item"><div class="who"><b>🔒 Nazorat jurnali serverda</b><span>Sezgir amallar serverga darhol yoziladi — hech kim o'chira olmaydi (admin ham, menejer ham).</span></div><span class="tag paid">Yoqilgan</span></div>`:''}
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
           <button class="btn btn-ghost" onclick="exportPageExcel()" style="padding:9px 16px">⤓ Joriy sahifani Excelga</button>
-          ${isSuper?`<button class="btn btn-ghost" onclick="resetState()" style="padding:9px 16px;color:var(--red-ink);border-color:var(--red)">⚠ Serverni tozalash (hammasi o'chadi)</button>`:''}
+          <button class="btn btn-ghost" onclick="resetState()" style="padding:9px 16px;color:var(--red-ink);border-color:var(--red)">⚠ Serverni tozalash (hammasi o'chadi)</button>
         </div>
-        <div class="mini-hint" style="padding:10px 0 0">${isSuper?'⚠ "Serverni tozalash" — <b>barcha mehmon va to\'lov ma\'lumoti</b> butunlay o\'chadi. Faqat boshdan boshlash kerak bo\'lsa bosing.':'Ma\'lumot serverda xavfsiz saqlanmoqda.'}</div>
-      </div></div>
+        <div class="mini-hint" style="padding:10px 0 0">⚠ "Serverni tozalash" — <b>barcha mehmon va to'lov ma'lumoti</b> butunlay o'chadi. Faqat boshdan boshlash kerak bo'lsa bosing.</div>
+      </div></div>`:''}
     <div class="panel"><div class="panel-h"><h3>${t('til')}</h3><span class="spacer"></span><span class="pill">${LANG.toUpperCase()}</span></div>
       <div class="panel-b" style="padding:18px 20px">
         <div class="rolerow" style="grid-template-columns:1fr 1fr 1fr;margin:0">
@@ -5789,15 +5726,7 @@ function renderSettings(){
         <div class="mini-hint" style="padding:0">Kurslar O'zbekiston <b>Markaziy bankidan (cbu.uz)</b> olinadi. "CBU dan yangilash" — dollar, yevro va rublni birdan bugungi rasmiy kurs bo'yicha yangilaydi. Internet bo'lmasa, qo'lda kiriting.</div>
       </div></div>
 
-    ${role==='manager'?`<div class="panel"><div class="panel-h"><h3>${t('xavfsizlik')}</h3><span class="roleonly">🔒 Faqat menejer</span></div>
-      <div class="panel-b" style="padding:6px 4px">
-        <div class="arr-item"><div class="who"><b>Menejer MFA (ikki bosqichli kirish)</b><span>Har daqiqada yangilanadigan kod. Admin MFA yo'q, kod faqat menejerga.</span></div><span class="tag paid">Yoqilgan</span></div>
-        <div class="arr-item"><div class="who"><b>Sabab so'rash (sezgir amallar)</b><span>Narx, vozvrat, ko'chirish, bekor qilish, korreksiya — sabab majburiy</span></div><span class="tag paid">Yoqilgan</span></div>
-        <div class="arr-item"><div class="who"><b>Amallar jurnali</b><span>Barcha sezgir amallar menejerga yoziladi</span></div><span class="tag paid">Yoqilgan</span></div>
-        <div class="arr-item"><div class="who"><b>Menejer tiklash huquqi (vastanavit)</b><span>Check-out qilingan bronni faqat menejer tiklaydi; narxni faqat korreksiya qiladi</span></div><span class="tag paid">Yoqilgan</span></div>
-        <div class="arr-item"><div class="who"><b>E-mehmon: vaqt farqi + kishi soni</b><span>Vaqt chegarasi menejer belgilaydi; kishi soni farqi ham qizil chiqadi</span></div><span class="tag paid">${emehmonTolerance}′</span></div>
-        <div class="arr-item"><div class="who"><b>Telegram bot (egaga bildirishnoma)</b><span>Sezgir amallar + kunlik hisobot real vaqtda</span></div><span class="tag book">Tez orada</span></div>
-      </div></div>`:''}
+    ${''/* 🗑 "Xavfsizlik" paneli olib tashlandi (operator talabi bilan) — admin ham, menejer ham ko'rmaydi. */}
   </div>`;
 }
 
