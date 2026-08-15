@@ -3640,7 +3640,7 @@ function drawIzmenit(){
           <div class="field"><label>Ism</label><input value="${esc(a.firstName)}" oninput="izmenitState.firstName=this.value"></div>
           <div class="field"><label>Familiya</label><input value="${esc(a.lastName)}" oninput="izmenitState.lastName=this.value"></div>
         </div>
-        <div class="field"><label>1 kunlik narx (so'm)</label><input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" value="${sepNum(a.nightly)}" oninput="fmtSomInput(this);izmenitState.nightly=unNum(this.value)"></div>
+        ${role==='manager'?`<div class="field"><label>1 kunlik narx (so'm)</label><input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" value="${sepNum(a.nightly)}" oninput="fmtSomInput(this);izmenitState.nightly=unNum(this.value)"></div>`:''}
         <div class="field"><label>Sabab (majburiy)</label><textarea rows="2" oninput="izmenitState.reason=this.value" placeholder="Nega tuzatilmoqda? (masalan: narx xato kiritilgan edi)">${esc(a.reason)}</textarea></div>
       </div>
       <div class="modal-f"><button class="btn btn-ghost" onclick="closeIzmenit()">Yopish</button>
@@ -3658,7 +3658,8 @@ function commitIzmenit(){
   const newIn=parseYmd(a.inDate), newOut=parseYmd(a.outDate);
   if(isNaN(newIn.getTime())||isNaN(newOut.getTime())){ toast('Sana noto\'g\'ri.',false); return; }
   if(stripTime(newOut).getTime()<stripTime(newIn).getTime()){ toast('Chiqish sanasi kelishdan oldin bo\'lmasin.',false); return; }
-  const newNightly=+a.nightly||0;
+  // 🔒 Narxni faqat MENEJER o'zgartiradi (admin uchun narx maydoni yashiringan). Admin — narx tegilmaydi.
+  const newNightly = role==='manager' ? (+a.nightly||0) : (s.nightly||Math.round(s.price/Math.max(1,nights(s))));
   const changes=[];   // "Maydon: eski → yangi"
 
   // 1) ism / familiya
