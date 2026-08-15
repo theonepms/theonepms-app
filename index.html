@@ -643,8 +643,33 @@ const fmt=d=>String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padS
 const fmtShort=d=>String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0');
 const ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const wd=['Yak','Du','Se','Cho','Pay','Ju','Sha'];
-const money=n=>new Intl.NumberFormat('ru-RU').format(Math.round(n))+' so\'m';
-const somNum=n=>new Intl.NumberFormat('ru-RU').format(Math.round(n));
+/* 🔢 RAQAM FORMATI — minglik NUQTA bilan (de-DE): 100000 → 100.000, kasr esa vergul: 12500.5 → 12.500,5 */
+const money=n=>new Intl.NumberFormat('de-DE').format(Math.round(n))+' so\'m';
+const somNum=n=>new Intl.NumberFormat('de-DE').format(Math.round(n));
+/* sepNum — butun sonni nuqta bilan (input ko'rinishi uchun) */
+const sepNum=n=>{ n=Math.round(+n||0); return n.toLocaleString('de-DE'); };
+/* unNum — foydalanuvchi kiritgan matnni raqamga: nuqta(minglik) o'chadi, vergul(kasr)→nuqta.
+   "100.000"→100000 · "12.500,5"→12500.5 · "12,5"→12.5 · ""→0 */
+function unNum(s){
+  if(s==null) return 0;
+  s=String(s).trim().replace(/\s/g,'');
+  if(s==='') return 0;
+  if(s.indexOf(',')>=0){ return (+s.replace(/\./g,'').replace(',','.'))||0; }  // yevropa: nuqta minglik, vergul kasr
+  return (+s.replace(/\./g,''))||0;                                            // faqat nuqta — minglik deb o'chiramiz
+}
+/* fmtSomInput — BUTUN so'm inputini yozayotganda jonli nuqtalash (kasr yo'q) */
+function fmtSomInput(el){
+  const raw=(el.value||'').replace(/[^\d]/g,'');
+  el.value = raw ? (+raw).toLocaleString('de-DE') : '';
+}
+/* fmtCurInput — VALYUTA (kasrli) inputini yevropa formatida jonli formatlash */
+function fmtCurInput(el){
+  let v=(el.value||'').replace(/[^\d.,]/g,'').replace(/\./g,'').replace(',','.'); // xom raqam (kasr nuqta bilan)
+  if(v==='' ){ el.value=''; return; }
+  const neg=false; const parts=v.split('.');
+  const intp=(+(parts[0]||'0')).toLocaleString('de-DE');
+  el.value = parts.length>1 ? intp+','+parts[1].slice(0,2) : intp;
+}
 /* HAQIQIY bugungi kun — TOSHKENT vaqti bo'yicha (kompyuter zonasi boshqa bo'lsa ham to'g'ri) */
 /* 📅 Mehmonxonaning boshlanish sanasi — panelda belgilanadi.
    Belgilanmagan bo'lsa: bugungi Toshkent kuni. */
@@ -3000,14 +3025,14 @@ function drawRegister(){
       ${r.guests.length<6?`<button class="addguest" onclick="addGuest()"><span style="display:inline-flex;align-items:center;gap:7px"><span style="display:inline-flex;width:20px;height:20px;border-radius:50%;background:var(--brand);color:#fff;align-items:center;justify-content:center;font-size:15px;font-weight:700">+</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>${P('Yana mehmon qo\'shish')}</span></button>`:''}
 
       <div class="field" style="margin-top:14px"><label>Xona narxi — 1 kunga (nachisleniye, ruchnoy)</label>
-        <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="regNightly" value="${r.nightly||''}" oninput="regState.nightly=+this.value;drawTotals()" placeholder="Masalan: 500000"></div>
+        <input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" id="regNightly" value="${r.nightly?sepNum(r.nightly):''}" oninput="fmtSomInput(this);regState.nightly=unNum(this.value);drawTotals()" placeholder="Masalan: 500000"></div>
       <div class="hint" style="background:#eff6ff;color:var(--brand-ink)"><span>Umumiy: <b id="regTotal">${money(total)}</b> &nbsp;(<span id="regCalc">${r.nights} tun × ${money(+r.nightly||0)}</span>)${r.rooms.length>1?` × ${r.rooms.length} xona`:''}</span></div>
 
       <div class="paybox">
         <div style="font-weight:600;font-size:13px;margin-bottom:10px">To'lov (majburiy emas — hozir yoki keyin)</div>
         <div class="payrow2">
           <div id="regMethod">${methodSelHtml()}</div>
-          <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="regAmt" value="${r.pay.amount||''}" oninput="regState.pay.amount=+this.value;drawTotals()" placeholder="To'langan summa" style="padding:9px 12px;border:1.5px solid var(--line);border-radius:7px">
+          <input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" id="regAmt" value="${r.pay.amount?sepNum(r.pay.amount):''}" oninput="fmtSomInput(this);regState.pay.amount=unNum(this.value);drawTotals()" placeholder="To'langan summa" style="padding:9px 12px;border:1.5px solid var(--line);border-radius:7px">
         </div>
         <div class="paysummary"><span>Qoldiq (qarz)</span><b id="regBal" style="color:var(--red-ink)">${money(total-(+r.pay.amount||0))}</b></div>
       </div>
@@ -3330,7 +3355,7 @@ function saveFolio(id){
 /* --- folio actions (these generate manager audit entries when post-checkin) --- */
 function logAction(s,type,text,amount,reason){
   const entry={type,text,amount:amount||0,reason:reason||'',by:role==='admin'?'Administrator':role==='owner'?'Owner':'Menejer',time:uzTime()+' · '+fmtShort(base),day:ymd(base),stayDate:fmt(s.inDate),actDate:fmt(base)};
-  const full=Object.assign({room:s.room,guest:s.firstName+' '+s.lastName},entry);
+  const full=Object.assign({id:s.id,room:s.room,guest:s.firstName+' '+s.lastName},entry);
   auditLog.unshift(full);
   // xonaning o'z tarixi — HECH KIM o'chirolmaydi (foliyada pastda ko'rinadi)
   s.history=s.history||[]; s.history.push(entry);
@@ -3359,13 +3384,19 @@ function stayIsToday(s){
   return t>=a && t<=b;      // bugun kelgan / yashayotgan / bugun chiqqan
 }
 function can(action,s){
+  // 🚚 Xona ko'chirish — rol farqi YO'Q (menejer ham, admin ham): o'tib ketgan (chiqib bo'lgan/tugagan)
+  // bronni ko'chirib bo'lmaydi. Bugun + kelajak ruxsat; o'tgan bloklangan.
+  if(action==='moveRoom'){
+    if(role==='owner' || !s || s.status==='canceled') return false;
+    return stripTime(s.checkoutDate||s.outDate).getTime() >= stripTime(base).getTime();
+  }
   if(role==='manager') return true;
   if(role!=='admin') return false;
   switch(action){
     case 'pay':          return true;              // to'lov qabul qilish (pul kiradi)
     case 'charge':       return true;              // xizmat qo'shish
     case 'chargeCancel': return true;              // to'lanmagan xizmatni bekor qilish
-    case 'moveRoom':     return stayIsToday(s);    // xona — FAQAT joriy kun
+    case 'moveRoom':     return stayIsToday(s);    // (erishilmaydi — yuqorida hal qilinadi)
     case 'extend':       return stayIsToday(s);    // muddat — faqat joriy kun, faqat uzaytirish
     case 'price':        return stayIsToday(s);    // narx — FAQAT joriy kun (eski kunlar qotgan)
     case 'cashRefund':   return false;             // ⛔ kassadan pul qaytarish — FAQAT menejer
@@ -3420,6 +3451,13 @@ function findClash(room, inD, outD, ignoreId){
     && stripTime(x.outDate).getTime() > A);
   if(clash) return {type:'stay', who:`${esc(clash.firstName)} ${esc(clash.lastName)}`,
                     from:clash.inDate, to:clash.outDate};
+  // 1b) 🛡 FAOL (hali check-out qilinmagan) mehmon — chiqish kuni yangi kishi bilan bir xil bo'lsa ham BAND.
+  // Turnover (biri chiqib, biri kiradi) faqat eski mehmon CHECK-OUT qilingandan (status='out') keyin ishlaydi.
+  const active=stays.find(x=> x.id!==ignoreId && x.room===room && x.status==='in'
+    && stripTime(x.inDate).getTime() <= A
+    && stripTime(x.checkoutDate||x.outDate).getTime() >= A);
+  if(active) return {type:'stay', who:`${esc(active.firstName)} ${esc(active.lastName)}`,
+                    from:active.inDate, to:active.outDate, active:true};
   // 2) yopilgan (ta'mir) xona bilan to'qnashuv
   if(typeof roomBlocks!=='undefined' && Array.isArray(roomBlocks)){
     const bd=roomBlocks.find(bk=>{
@@ -3436,6 +3474,7 @@ function findClash(room, inD, outD, ignoreId){
 function clashMsg(c, room){
   if(!c) return '';
   if(c.type==='block') return `Xona ${room} bu kunlarda YOPIQ (${esc(c.reason)}). Boshqa xona tanlang.`;
+  if(c.active) return `Xona ${room} band: ${c.who} hali chiqmagan. Avval uni check-out qiling, keyin yangi mehmonni joylashtiring.`;
   return `Xona ${room} band: ${c.who} (${fmtShort(c.from)}–${fmtShort(c.to)}). Boshqa xona yoki sana tanlang.`;
 }
 function doUncancel(id){
@@ -3485,10 +3524,11 @@ function doRestore(id){
   // Shu xonada VAQTI to'qnashadigan boshqa bron bormi?
   const clash=stays.filter(x=>x.id!==id && x.room===s.room && x.status!=='canceled')
     .filter(x=>{ const xs=stayStartMs(x), xe=Math.max(stayEndMs(x),xs+30*60000); return xs<en-1000 && xe>st+1000; });
-  if(!clash.length){ restoreNow(s,newOut); return; }   // ✅ to'qnashmadi — hech kim ko'chmaydi
-  // ⚠️ To'qnashdi — menejerga tanlov beramiz
-  actState={id,kind:'restore',reason:'',newRoom:'',mode:'dayuse',clash,newOut};
-  drawRestoreModal();
+  if(!clash.length){ restoreNow(s,newOut); return; }   // ✅ to'qnashmadi — o'z xonasiga tiklanadi
+  // ⚠️ Xona band — YANGI mehmonni avval boshqa xonaga ko'chirish kerak, keyin tiklanadi.
+  const who=clash.map(x=>`${esc(x.firstName)} ${esc(x.lastName)}`).join(', ');
+  toast(`Xona ${s.room} band: ${who}. Avval keyingi mehmonni boshqa xonaga ko'chiring — xona bo'shagach vastanavit qiling.`,false);
+  return;
 }
 function restoreNow(s,newOut,room){
   s.status='in'; s.checkoutTime=''; s.checkoutDate=null;
@@ -3588,7 +3628,7 @@ function drawIzmenit(){
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
       <input type="checkbox" ${c.keep?'checked':''} onchange="izmenitState.charges[${i}].keep=this.checked;drawIzmenit()" title="Belgini olsangiz — xizmat o'chadi">
       <span style="flex:1;font-size:13px${c.keep?'':';text-decoration:line-through;opacity:.5'}">${c.name}</span>
-      <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="${c.amount}" oninput="izmenitState.charges[${i}].amount=+this.value" style="width:130px;padding:6px 8px;border:1.5px solid var(--line);border-radius:6px" ${c.keep?'':'disabled'}>
+      <input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" value="${sepNum(c.amount)}" oninput="fmtSomInput(this);izmenitState.charges[${i}].amount=unNum(this.value)" style="width:130px;padding:6px 8px;border:1.5px solid var(--line);border-radius:6px" ${c.keep?'':'disabled'}>
     </div>`).join('') : '<div class="mini-hint" style="padding:0">Xizmat yo\'q</div>';
   const html=`<div class="overlay" id="izOverlay" onclick="if(event.target===this)closeIzmenit()">
     <div class="modal" style="max-width:560px">
@@ -3602,7 +3642,7 @@ function drawIzmenit(){
         </div>
         <div class="grid2">
           <div class="field"><label>Xona</label><select onchange="izmenitState.room=this.value">${roomOpts}</select></div>
-          <div class="field"><label>1 kunlik narx (so'm)</label><input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="${a.nightly}" oninput="izmenitState.nightly=+this.value"></div>
+          <div class="field"><label>1 kunlik narx (so'm)</label><input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" value="${sepNum(a.nightly)}" oninput="fmtSomInput(this);izmenitState.nightly=unNum(this.value)"></div>
         </div>
         <div class="grid2">
           <div class="field"><label>Kelish sanasi</label><input type="date" value="${a.inDate}" onchange="izmenitState.inDate=this.value"></div>
@@ -3808,7 +3848,7 @@ function drawActionModal(){
       ${chargeSection}
       ${a.rSel?`
         <div class="field" style="margin-top:14px"><label>Qaytariladigan summa (so'm)${maxAmt?` — ko'pi bilan ${money(maxAmt)}`:''}</label>
-          <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="To'liq yoki qisman"></div>
+          <input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" id="actAmt" value="${a.amount?sepNum(a.amount):''}" oninput="fmtSomInput(this);actState.amount=unNum(this.value)" placeholder="To'liq yoki qisman"></div>
         ${isPay?`<div class="field"><label>Qaysi usulda qaytariladi</label><div id="actMethod">${actMethodHtml()}</div></div>`:''}
         <div class="t-box" style="margin-top:6px">
           <div class="t-row"><span>Jami hisob</span><b>${money(totalDue(s))}</b></div>
@@ -3820,28 +3860,28 @@ function drawActionModal(){
   } else if(a.kind==='pay'){
     bodyHtml=`
       <div class="field"><label>To'lov summasi (so'm)</label>
-        <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 250000" autofocus></div>
+        <input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" id="actAmt" value="${a.amount?sepNum(a.amount):''}" oninput="fmtSomInput(this);actState.amount=unNum(this.value)" placeholder="Masalan: 250000" autofocus></div>
       <div class="field"><label>To'lov usuli</label>
         <div id="actMethod">${actMethodHtml()}</div></div>
       <div class="folio-meta" style="margin:4px 0 10px"><div class="m"><div class="k">Joriy qarz</div><div class="val money" style="color:var(--red-ink)">${money(balance(s))}</div></div></div>`;
   } else if(a.kind==='srefund'){
     bodyHtml=`
       <div class="field"><label>Chegirma summasi (so'm)</label>
-        <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 100000" autofocus></div>
+        <input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" id="actAmt" value="${a.amount?sepNum(a.amount):''}" oninput="fmtSomInput(this);actState.amount=unNum(this.value)" placeholder="Masalan: 100000" autofocus></div>
       <div class="mini-hint" style="padding:0 0 8px;line-height:1.5">
         Bu — <b>yashash (xizmat) vozvrati</b>: pul harakati yo'q, mehmonning <b>hisobidan (qarzidan) chegiriladi</b>. To'lanmagan xonaga ham ishlaydi.<br>
         Joriy jami hisob: ${money(totalDue(s))} · qarz: ${money(balance(s))}</div>`;
   } else if(a.kind==='sadd'){
     bodyHtml=`
       <div class="field"><label>Qo'shiladigan summa (so'm)</label>
-        <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 100000" autofocus></div>
+        <input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" id="actAmt" value="${a.amount?sepNum(a.amount):''}" oninput="fmtSomInput(this);actState.amount=unNum(this.value)" placeholder="Masalan: 100000" autofocus></div>
       <div class="mini-hint" style="padding:0 0 8px;line-height:1.5">
         Bu — <b>yashash hisobiga qo'shish</b>: masalan check-in paytida 500 ming kiritilib, aslida 600 ming bo'lsa — 100 mingni qo'shasiz. Jami hisobga qo'shiladi (qarz oshadi).<br>
         Joriy jami hisob: ${money(totalDue(s))} · qarz: ${money(balance(s))}</div>`;
   } else if(a.kind==='price'){
     const fi=futureNightInfo(s);
     bodyHtml=`<div class="field"><label>Yangi 1 kunlik narx (so'm)</label>
-      <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="actAmt" value="${a.price}" oninput="actState.price=this.value" autofocus></div>
+      <input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" id="actAmt" value="${sepNum(a.price)}" oninput="fmtSomInput(this);actState.price=unNum(this.value)" autofocus></div>
       <div class="mini-hint" style="padding:0 0 10px;line-height:1.5">
         Eski 1 kunlik narx: ${money(s.nightly||Math.round(s.price/nights(s)))}.<br>
         ⚠ O'tgan (nochnoy auditdan o'tgan) ${fi.frozen} tun <b>qotgan</b> — faqat korreksiya bilan.<br>
@@ -3849,7 +3889,7 @@ function drawActionModal(){
   } else if(a.kind==='charge'){
     bodyHtml=`
       <div class="field"><label>Nomi (nima uchun)</label><input id="actName" value="${a.name}" oninput="actState.name=this.value" placeholder="Masalan: Coca-Cola, mini-bar, kir yuvish" autofocus></div>
-      <div class="field"><label>Summa (so'm)</label><input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 15000"></div>
+      <div class="field"><label>Summa (so'm)</label><input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" id="actAmt" value="${a.amount?sepNum(a.amount):''}" oninput="fmtSomInput(this);actState.amount=unNum(this.value)" placeholder="Masalan: 15000"></div>
       <div class="mini-hint" style="padding:0;line-height:1.5">Bu — <b>pul emas</b>. Mehmon hisobiga (qarziga) qo'shiladi. Keyin to'laydi. Xato qo'shsangiz — <b>↩ Vozvrat</b> orqali olib tashlaysiz.</div>`;
   } else if(a.kind==='cancel'){
     const paidNow=(s.payments||[]).filter(p=>p.type==='pay').reduce((x,p)=>x+p.amount,0);
@@ -3882,7 +3922,7 @@ function drawActionModal(){
         Hozir: <b>${fmt(s.inDate)}</b> · ${nights(s)} tun. Yangi sanani tanlasangiz, bron o'sha kunga ${nights(s)} tunga ko'chadi (chiqish avtomatik).</div>`;
   } else if(a.kind==='correct'){
     bodyHtml=`<div class="field"><label>To'g'ri 1 kunlik narx (korreksiya)</label>
-      <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="actAmt" value="${a.price}" oninput="actState.price=this.value" autofocus></div>
+      <input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" id="actAmt" value="${sepNum(a.price)}" oninput="fmtSomInput(this);actState.price=unNum(this.value)" autofocus></div>
       <div class="mini-hint" style="padding:0 0 10px;line-height:1.5">
         Eski narx: ${money(s.nightly||Math.round(s.price/nights(s)))} × ${nights(s)} tun = ${money(s.price)}.<br>
         ⚠ Bu <b>korreksiya</b> — narx xato kiritilgan bo'lsa, menejer <b>barcha kunlar</b>ni to'g'irlaydi (qotgan kunlar ham). Jurnalga yoziladi.</div>`;
@@ -3916,7 +3956,7 @@ function drawActionModal(){
         <button class="${a.elType==='early'?'on':''}" onclick="actState.elType='early';drawActionModal()">🌅 Erta kirish</button>
         <button class="${a.elType==='late'?'on':''}" onclick="actState.elType='late';drawActionModal()">🌙 Kech chiqish</button>
       </div></div>
-      <div class="field"><label>Summa (so'm) — qo'lda kiritiladi</label><input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" id="actAmt" value="${a.amount}" oninput="actState.amount=this.value" placeholder="Masalan: 150000 yoki 50% narx" autofocus></div>
+      <div class="field"><label>Summa (so'm) — qo'lda kiritiladi</label><input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" id="actAmt" value="${a.amount?sepNum(a.amount):''}" oninput="fmtSomInput(this);actState.amount=unNum(this.value)" placeholder="Masalan: 150000 yoki 50% narx" autofocus></div>
       <div class="mini-hint" style="padding:0 0 8px;line-height:1.5">
         Summa folioga qo'shiladi (qarzga), invoyz va hisobotda ko'rinadi.<br>
         ${a.elType==='late'?'🌙 Kech chiqish — shaxmatkada bron <b>oldinga (keyingi kunga) sal suriladi</b>.':'🌅 Erta kirish — shaxmatkada bron <b>orqaga sal suriladi</b>.'} Vaqtlar O'zbekiston soatida ko'rinadi.</div>`;
@@ -4477,6 +4517,9 @@ function nazAll(){ nazDate=''; render(); }
 ========================================================================= */
 let shubhaFilter='all';
 function setShubhaFilter(v){ shubhaFilter=v; render(); }
+let shubhaDate='';   // bo'sh = HAMMASI (barcha kunlar) — "Admin nazorati" kabi
+function setShubhaDate(v){ shubhaDate=v; render(); }
+function shubhaAll(){ shubhaDate=''; render(); }
 
 /* "Tekshirdim" belgisi — faqat OWNER menejerning amalini yopa oladi */
 function shubhaAck(key){
@@ -4540,41 +4583,83 @@ function shubhaPatterns(list){
 
 function renderShubha(){
   if(role!=='manager' && role!=='owner') return `<div class="panel"><div class="empty-state">Bu bo'lim faqat menejer va egasi uchun.</div></div>`;
-  const all=shubhaList();   // faqat vozvrat + narx o'zgarishi (joriy va o'tgan kunlar)
-  const refunds=all.filter(x=>x.lvl==='high').length;   // vozvratlar
-  const prices=all.length-refunds;                       // narx o'zgarishlari
+  const all=shubhaList();   // faqat vozvrat + narx o'zgarishi (barcha kunlar)
+  const refundsTotal=all.filter(x=>x.lvl==='high').length;   // vozvratlar
+  const pricesTotal=all.length-refundsTotal;                 // narx o'zgarishlari
 
-  const rows=[...all].reverse().map(x=>{
-    const a=x.a, isRef=(x.lvl==='high');
+  // barcha kunlar (yangi -> eski) — "Admin nazorati" kabi
+  const days=[...new Set(all.map(x=>x.a.day||ymd(base)))].sort().reverse();
+  const showAll=!shubhaDate;
+  const shown = showAll ? all : all.filter(x=>(x.a.day||ymd(base))===shubhaDate);
+
+  const dateBar=`<div class="panel" style="margin-bottom:14px"><div style="display:flex;align-items:center;gap:10px;padding:12px 16px;flex-wrap:wrap">
+    <button class="btn ${showAll?'btn-primary':'btn-ghost'}" style="padding:8px 16px;font-size:13px" onclick="shubhaAll()">📋 Hammasi</button>
+    <span style="color:var(--txt-3)">yoki</span>
+    <span style="font-weight:600;font-size:13px">📅 Kun tanlang:</span>
+    <input type="date" value="${shubhaDate||ymd(base)}" onchange="setShubhaDate(this.value)" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px">
+    ${days.length?`<div class="seg" style="flex-wrap:wrap">${days.slice(0,8).map(d=>{const p=d.split('-');return `<button class="${d===shubhaDate?'on':''}" onclick="setShubhaDate('${d}')">${p[2]}.${p[1]}</button>`;}).join('')}</div>`:''}
+    <span style="margin-left:auto;font-size:11px;color:var(--txt-3)">🔒 Hech qachon o'chmaydi</span>
+  </div></div>`;
+
+  // sana bo'yicha guruhlab chizish — har yangi kun boshida sarlavha
+  let rows='', lastDay='';
+  shown.forEach(x=>{
+    const a=x.a, aday=a.day||ymd(base);
+    if(aday!==lastDay){
+      lastDay=aday;
+      const p=aday.split('-'); const dObj=new Date(+p[0],+p[1]-1,+p[2]);
+      const cnt=shown.filter(y=>(y.a.day||ymd(base))===aday).length;
+      rows+=`<div class="arr-item" style="background:var(--panel-2);padding:9px 16px;font-weight:700;color:var(--brand-ink);font-size:12.5px">📅 ${fmt(dObj)} · ${wdName(dObj.getDay())} <span style="color:var(--txt-3);font-weight:500">— ${cnt} ta</span></div>`;
+    }
+    const isRef=(x.lvl==='high');
     const col=isRef?'var(--red)':'var(--amber)';
     const bg =isRef?'var(--red-bg)':'var(--amber-bg)';
     const ink=isRef?'var(--red-ink)':'var(--amber-ink)';
-    return `<div class="arr-item" style="border-left:4px solid ${col};background:${bg};align-items:flex-start">
+    rows+=`<div class="arr-item" style="border-left:4px solid ${col};background:${bg};align-items:flex-start">
       <div class="who" style="flex:1">
         <b style="color:${ink}">${isRef?'↩ Vozvrat (pul qaytarildi)':'💰 Narx o\'zgartirildi'}</b>
         <span style="display:block;margin-top:2px;color:var(--txt)">${esc(a.text)}</span>
-        <span style="display:block;margin-top:2px">Xona <b>${esc(a.room||'—')}</b> · ${esc(a.guest||'—')}${a.amount?` · <b>${money(a.amount)}</b>`:''}</span>
+        <span style="display:block;margin-top:2px">Xona <b>${esc(a.room||'—')}</b> · ${guestLink(a)}${a.amount?` · <b>${money(a.amount)}</b>`:''}</span>
         <span style="display:block;margin-top:2px;color:var(--txt-3)">
           ${/admin/i.test(a.by||'')?`<b style="color:var(--red-ink)">${esc(a.by)}</b>`:esc(a.by)} · ${esc(a.time)}
           ${a.reason?` · 💬 ${esc(a.reason)}`:' · <i style="color:var(--red-ink)">sabab yozilmagan</i>'}</span>
       </div></div>`;
-  }).join('');
+  });
 
+  const title = showAll ? `Vozvrat va narx o'zgarishlari — HAMMASI (${all.length} ta)`
+    : `Vozvrat va narx — ${fmt(new Date(shubhaDate.split('-')[0],+shubhaDate.split('-')[1]-1,+shubhaDate.split('-')[2]))}`;
   return `<div class="hint" style="background:var(--red-bg);color:var(--red-ink)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-    <span>Bu yerda faqat <b>pul vozvratlari</b> va <b>narx o'zgarishlari</b> ko'rsatiladi — joriy va o'tgan kunlar. Yozuvlar <b>hech qachon o'chmaydi</b>.</span></div>
+    <span>Bu yerda faqat <b>pul vozvratlari</b> va <b>narx o'zgarishlari</b> — <b>sana bo'yicha ajratilgan</b>. Ismni bosing — bron ochiladi. Yozuvlar <b>hech qachon o'chmaydi</b>.</span></div>
   <div class="stats">
-    <div class="stat"><div class="l">↩ Vozvratlar</div><div class="v" style="color:var(--red-ink)">${refunds}</div></div>
-    <div class="stat"><div class="l">💰 Narx o'zgarishlari</div><div class="v" style="color:var(--amber-ink)">${prices}</div></div>
+    <div class="stat"><div class="l">↩ Vozvratlar</div><div class="v" style="color:var(--red-ink)">${refundsTotal}</div></div>
+    <div class="stat"><div class="l">💰 Narx o'zgarishlari</div><div class="v" style="color:var(--amber-ink)">${pricesTotal}</div></div>
     <div class="stat"><div class="l">Jami yozuv</div><div class="v">${all.length}</div></div>
   </div>
-  <div class="panel"><div class="panel-h"><h3>Shubhali amallar — vozvrat va narx o'zgarishlari</h3><span class="spacer"></span>
+  ${dateBar}
+  <div class="panel"><div class="panel-h"><h3>${title}</h3><span class="spacer"></span>
     <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px;margin-left:8px" onclick="exportPageExcel()">⤓ Excel</button></div>
     ${rows||`<div class="empty-state" style="color:var(--green-ink)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 6L9 17l-5-5"/></svg>
-      Hali vozvrat yoki narx o'zgarishi yo'q.</div>`}
+      ${showAll?'Hali vozvrat yoki narx o\'zgarishi yo\'q.':'Bu kuni vozvrat/narx o\'zgarishi yo\'q.'}</div>`}
   </div>`;
 }
 
+/* Audit yozuvidan bron id'sini topish — ism bosilganda folio ochish uchun.
+   Avval id (yangi yozuvlarda bor), bo'lmasa room+guest bo'yicha aniq bitta mos kelsa. */
+function auditStayId(a){
+  if(a && a.id && stays.some(x=>x.id===a.id)) return a.id;
+  if(a && a.room && a.room!=='—' && a.guest && a.guest!=='—' && a.guest.trim()!==''){
+    const m=stays.filter(x=>x.room===a.room && (x.firstName+' '+x.lastName)===a.guest);
+    if(m.length===1) return m[0].id;
+  }
+  return null;
+}
+/* Ismni bosiladigan qilib qaytaradi (folio ochiladi), yoki oddiy matn */
+function guestLink(a){
+  const id=auditStayId(a);
+  const nm=esc(a.guest||'—');
+  return id ? `<span onclick="event.stopPropagation();openFolio('${id}')" style="cursor:pointer;color:var(--brand-ink);text-decoration:underline;text-decoration-style:dotted">${nm}</span>` : nm;
+}
 function renderNazorat(){
   const showAll = !nazDate;
   // barcha mavjud kunlar (yangi -> eski)
@@ -4627,7 +4712,7 @@ function renderNazorat(){
     rows+=`<tr${rowStyle}>
       <td style="white-space:nowrap;font-family:'JetBrains Mono';font-size:12px">${a.time}</td>
       <td><b class="mono">${a.room}</b></td>
-      <td>${a.guest}</td>
+      <td>${guestLink(a)}</td>
       <td${isAdm?' style="color:var(--red-ink)"':''}>${a.text}${twoDate}</td>
       <td class="money"${isAdm?' style="color:var(--red-ink)"':''}>${amt}</td>
       <td>${a.reason?'💬 '+a.reason:'—'}</td>
@@ -5402,10 +5487,10 @@ function renderStatistika(){
     <td class="money">${c.pct}%</td>
     <td><button class="btn btn-ghost" style="padding:4px 9px;font-size:12px" onclick="rmChannel(${i})">✕</button></td></tr>`).join('');
   return `<div class="stats">
-    <div class="stat accent a-blue"><div class="l">Yillik tushum</div><div class="v">${yearTotal.toLocaleString('ru-RU')}<small> mln</small></div><div class="d">${yr} · ${roomNightsYear} tun-xona</div></div>
+    <div class="stat accent a-blue"><div class="l">Yillik tushum</div><div class="v">${yearTotal.toLocaleString('de-DE')}<small> mln</small></div><div class="d">${yr} · ${roomNightsYear} tun-xona</div></div>
     <div class="stat accent a-green"><div class="l">O'rtacha bandlik</div><div class="v">${occPct}<small>%</small></div><div class="d">yil boshidan bugungacha</div></div>
     <div class="stat accent a-violet"><div class="l">O'rtacha narx (ADR)</div><div class="v">${adr.toFixed(2)}<small> mln</small></div></div>
-    <div class="stat accent a-amber"><div class="l">Eng band oy</div><div class="v" style="font-size:20px">${bestVal>0?months[bestI]:'—'}</div><div class="d">${bestVal.toLocaleString('ru-RU')} mln so'm</div></div>
+    <div class="stat accent a-amber"><div class="l">Eng band oy</div><div class="v" style="font-size:20px">${bestVal>0?months[bestI]:'—'}</div><div class="d">${bestVal.toLocaleString('de-DE')} mln so'm</div></div>
   </div>
   <div class="panel"><div class="panel-h"><h3>${P("Oylik tushum")} — ${yr}</h3><span class="spacer"></span><span class="pill">mln so'm</span></div>
     <div class="wk-chart" style="height:200px">${bars}</div><div style="height:16px"></div></div>
@@ -5427,10 +5512,11 @@ let rateLoading=false;
 /* Har valyuta uchun kurs (so'mda) */
 function rateOf(cur){ return cur==='EUR'?eurRate:cur==='RUB'?rubRate:usdRate; }
 function setRateOf(cur,v){ v=+v||1; if(cur==='EUR')eurRate=v; else if(cur==='RUB')rubRate=v; else usdRate=v; }
-/* Valyuta → so'm va so'm → valyuta (ikki tomonlama) */
-function cur2som(cur,v){ const el=document.getElementById('som_'+cur); if(el)el.value=Math.round(+v*rateOf(cur)); }
-function som2cur(cur,v){ const el=document.getElementById('cur_'+cur); if(el)el.value=(+v/rateOf(cur)).toFixed(2); }
-function setCurRate(cur,v){ setRateOf(cur,v); const c=document.getElementById('cur_'+cur); if(c)cur2som(cur,c.value); }
+/* Valyuta → so'm va so'm → valyuta (ikki tomonlama). v — RAQAM (input'dan unNum bilan keladi).
+   Chiqish: so'm — nuqta bilan butun; valyuta — yevropa (nuqta minglik, vergul kasr). */
+function cur2som(cur,v){ const el=document.getElementById('som_'+cur); if(el)el.value=sepNum(Math.round((+v||0)*rateOf(cur))); }
+function som2cur(cur,v){ const el=document.getElementById('cur_'+cur); if(el)el.value=((+v||0)/rateOf(cur)).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function setCurRate(cur,v){ setRateOf(cur,v); const c=document.getElementById('cur_'+cur); if(c)cur2som(cur,unNum(c.value)); }
 /* Eski dollar funksiyalari — moslik uchun saqlanadi */
 function som2usd(v){ const el=document.getElementById('cur_USD'); if(el)el.value=(+v/usdRate).toFixed(2); }
 function usd2som(v){ const el=document.getElementById('som_USD'); if(el)el.value=Math.round(+v*usdRate); }
@@ -5457,7 +5543,7 @@ async function autoRate(){
     if(ok){
       rateUpdated=(dt||fmt(new Date()))+' · Markaziy bank';
       render();
-      toast(`Markaziy bank kursi yangilandi ✓ ($ ${usdRate.toLocaleString('ru-RU')} · € ${eurRate.toLocaleString('ru-RU')} · ₽ ${rubRate.toLocaleString('ru-RU')})`,true);
+      toast(`Markaziy bank kursi yangilandi ✓ ($ ${usdRate.toLocaleString('de-DE')} · € ${eurRate.toLocaleString('de-DE')} · ₽ ${rubRate.toLocaleString('de-DE')})`,true);
       return;
     }
     throw new Error('no data');
@@ -5651,7 +5737,7 @@ function renderSettings(){
     </div>`:'';
 
   const typeRows=ROOM_TYPES.map(k=>`<tr><td><b>${typeLabel(k)}</b></td>
-    <td><input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="${typeRates[k]}" onchange="setTypeRate('${k}',this.value)" style="width:140px;padding:6px 8px;border:1.5px solid var(--line);border-radius:6px"></td>
+    <td><input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" value="${sepNum(typeRates[k])}" oninput="fmtSomInput(this)" onchange="setTypeRate('${k}',unNum(this.value))" style="width:140px;padding:6px 8px;border:1.5px solid var(--line);border-radius:6px"></td>
     <td style="color:var(--txt-3);font-size:12px">${rooms.filter(r=>r.t===k).length} ta xona</td></tr>`).join('');
 
   return `<div style="max-width:760px">
@@ -5714,14 +5800,14 @@ function renderSettings(){
           <div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;flex-wrap:wrap">
               <span style="font-weight:700;font-size:15px">${sym} ${name}</span>
-              <span style="color:var(--txt-3)">1 ${code} = <b style="color:var(--brand-ink)">${rateOf(code).toLocaleString('ru-RU')} so'm</b></span>
+              <span style="color:var(--txt-3)">1 ${code} = <b style="color:var(--brand-ink)">${rateOf(code).toLocaleString('de-DE')} so'm</b></span>
             </div>
             <div class="grid2">
-              <div class="field" style="margin:0"><label>${sym} ${code} — yozing</label><input id="cur_${code}" type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="100" oninput="cur2som('${code}',this.value)" placeholder="100"></div>
-              <div class="field" style="margin:0"><label>So'm — yoki bu yerga</label><input id="som_${code}" type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="${Math.round(100*rateOf(code))}" oninput="som2cur('${code}',this.value)"></div>
+              <div class="field" style="margin:0"><label>${sym} ${code} — yozing</label><input id="cur_${code}" type="text" inputmode="decimal" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" value="100" oninput="fmtCurInput(this);cur2som('${code}',unNum(this.value))" placeholder="100"></div>
+              <div class="field" style="margin:0"><label>So'm — yoki bu yerga</label><input id="som_${code}" type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" value="${sepNum(Math.round(100*rateOf(code)))}" oninput="fmtSomInput(this);som2cur('${code}',unNum(this.value))"></div>
             </div>
             <div class="field" style="margin:8px 0 0"><label>Kursni qo'lda (internet yo'q bo'lsa)</label>
-              <input type="number" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" min="0" step="any" value="${rateOf(code)}" onchange="setCurRate('${code}',this.value);render()"></div>
+              <input type="text" inputmode="decimal" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" value="${rateOf(code).toLocaleString('de-DE')}" oninput="fmtCurInput(this)" onchange="setCurRate('${code}',unNum(this.value));render()"></div>
           </div>`).join('')}
         <div class="mini-hint" style="padding:0">Kurslar O'zbekiston <b>Markaziy bankidan (cbu.uz)</b> olinadi. "CBU dan yangilash" — dollar, yevro va rublni birdan bugungi rasmiy kurs bo'yicha yangilaydi. Internet bo'lmasa, qo'lda kiriting.</div>
       </div></div>
@@ -5847,12 +5933,15 @@ function renderAudit(){
       ${leaving.length?`⛔ Avval ${leaving.length} ta xonani hal qiling`:`🌙 Auditni yakunlash → ${fmt(new Date(base.getTime()+DAY))} ga o'tish`}</button>
   </div>`;
 }
-function runAudit(){
+async function runAudit(){
   const leaving=stays.filter(s=>s.status==='in' && stripTime(s.outDate).getTime()<=base.getTime());
   if(leaving.length){
     toast(`Avval ${leaving.length} ta xonani hal qiling: ${leaving.slice(0,5).map(s=>s.room).join(', ')}${leaving.length>5?'...':''}`,false);
     return;
   }
+  // ⚠️ Tasdiq — tasodifan bosilmasin, avval tekshirib chiqilsin
+  const _newDay=fmt(new Date(base.getTime()+DAY));
+  if(!(await askConfirm(`🌙 Nochnoy auditni yakunlaysizmi?\n\nKun yopiladi va ${_newDay} ga o'tadi — bu qaytarib bo'lmaydi.\n\nAvval tekshirib chiqing:\n• bugungi barcha to'lovlar\n• chiqishlar (check-out)\n• kassa to'g'rimi?`,{yes:'Ha, yakunlayman',no:'Bekor — tekshiraman',danger:true}))) return;
   const oldDay=fmt(base);
   // Kunni +1 kunga surish — butun dasturda (base joyida o'zgaradi)
   base.setTime(base.getTime()+DAY);
