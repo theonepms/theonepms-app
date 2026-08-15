@@ -3399,7 +3399,7 @@ function can(action,s){
     case 'moveRoom':     return stayIsToday(s);    // (erishilmaydi — yuqorida hal qilinadi)
     case 'extend':       return stayIsToday(s);    // muddat — faqat joriy kun, faqat uzaytirish
     case 'price':        return stayIsToday(s);    // narx — FAQAT joriy kun (eski kunlar qotgan)
-    case 'cashRefund':   return false;             // ⛔ kassadan pul qaytarish — FAQAT menejer
+    case 'cashRefund':   return stayIsToday(s);    // kassadan pul qaytarish — admin ham, faqat joriy kun (menejer — har kun)
     case 'correct':      return false;             // ⛔ narx korreksiyasi (eski/qotgan narx) — FAQAT menejer
     case 'rebook':       return stayIsToday(s);    // kelish sanasi — admin ham, faqat joriy kun
     case 'restore':      return stayIsToday(s);    // vastanavit — admin ham, faqat joriy kun
@@ -3640,17 +3640,7 @@ function drawIzmenit(){
           <div class="field"><label>Ism</label><input value="${esc(a.firstName)}" oninput="izmenitState.firstName=this.value"></div>
           <div class="field"><label>Familiya</label><input value="${esc(a.lastName)}" oninput="izmenitState.lastName=this.value"></div>
         </div>
-        <div class="grid2">
-          <div class="field"><label>Xona</label><select onchange="izmenitState.room=this.value">${roomOpts}</select></div>
-          <div class="field"><label>1 kunlik narx (so'm)</label><input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" value="${sepNum(a.nightly)}" oninput="fmtSomInput(this);izmenitState.nightly=unNum(this.value)"></div>
-        </div>
-        <div class="grid2">
-          <div class="field"><label>Kelish sanasi</label><input type="date" value="${a.inDate}" onchange="izmenitState.inDate=this.value"></div>
-          <div class="field"><label>Chiqish sanasi</label><input type="date" value="${a.outDate}" onchange="izmenitState.outDate=this.value"></div>
-        </div>
-        ${a.payIdx>=0?`<div class="field"><label>Oxirgi to'lov usuli</label>
-          <div class="method-sel wrap">${methodBtns}${a.payMethod==='karta'?`<select onchange="izmenitState.payCard=this.value" style="border:1.5px solid var(--line);border-radius:6px;padding:0 6px">${['UZCARD','HUMO','VISA','MASTER'].map(c=>`<option${a.payCard===c?' selected':''}>${c}</option>`).join('')}</select>`:''}</div></div>`:''}
-        <div class="field"><label>Xizmatlar (summani tuzatish · belgini olib o'chirish)</label>${chargeRows}</div>
+        <div class="field"><label>1 kunlik narx (so'm)</label><input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" value="${sepNum(a.nightly)}" oninput="fmtSomInput(this);izmenitState.nightly=unNum(this.value)"></div>
         <div class="field"><label>Sabab (majburiy)</label><textarea rows="2" oninput="izmenitState.reason=this.value" placeholder="Nega tuzatilmoqda? (masalan: narx xato kiritilgan edi)">${esc(a.reason)}</textarea></div>
       </div>
       <div class="modal-f"><button class="btn btn-ghost" onclick="closeIzmenit()">Yopish</button>
@@ -3849,7 +3839,8 @@ function drawActionModal(){
       ${a.rSel?`
         <div class="field" style="margin-top:14px"><label>Qaytariladigan summa (so'm)${maxAmt?` — ko'pi bilan ${money(maxAmt)}`:''}</label>
           <input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" id="actAmt" value="${a.amount?sepNum(a.amount):''}" oninput="fmtSomInput(this);actState.amount=unNum(this.value)" placeholder="To'liq yoki qisman"></div>
-        ${isPay?`<div class="field"><label>Qaysi usulda qaytariladi</label><div id="actMethod">${actMethodHtml()}</div></div>`:''}
+        ${isPay?`<div class="field"><label>Qaysi usulda qaytariladi</label>
+          <div class="mini-hint" style="padding:9px 12px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;color:var(--txt)">💳 <b>${a.method==='karta'?(a.card||'Karta'):methodLabel(a.method)}</b> — pul aynan shu usulda qaytadi (qanday to'langan bo'lsa — shunday).</div></div>`:''}
         <div class="t-box" style="margin-top:6px">
           <div class="t-row"><span>Jami hisob</span><b>${money(totalDue(s))}</b></div>
           <div class="t-row"><span>To'langan</span><b>${money(paidSum(s))}</b></div>
