@@ -2178,7 +2178,7 @@ function drawShiftModal(){
         ${row('💵 Naqd (yashikda)',x.cashExpect,x.cashReal,'cashReal',dCash)}
         ${row('💳 Karta (terminal)',x.cardExpect,x.cardReal,'cardReal',dCard)}
         <div class="field" style="margin-top:12px"><label>Izoh (ixtiyoriy)</label>
-          <textarea rows="2" oninput="shiftState.note=this.value" placeholder="Masalan: mehmon 50 000 ni ertaga to'laydi...">${x.note}</textarea></div>
+          <textarea rows="2" oninput="shiftState.note=this.value" placeholder="Masalan: mehmon 50 000 ni ertaga to'laydi...">${esc(x.note)}</textarea></div>
         <div id="shiftXulosa">${xulosa}</div>
       </div>
       <div class="modal-f"><button class="btn btn-ghost" onclick="closeShiftModal()">Bekor</button>
@@ -2967,7 +2967,7 @@ function regRecognize(){
   }
   regState.suggest=matches;
   const box=document.getElementById('regSuggest');
-  if(box) box.innerHTML=matches.length?matches.map((m,i)=>`<div class="sug" onclick="applyGuest(${i})"><b>${esc(m.firstName)} ${esc(m.lastName)}</b><span>${m.phone||'—'} · ${m.citizen}</span></div>`).join(''):'';
+  if(box) box.innerHTML=matches.length?matches.map((m,i)=>`<div class="sug" onclick="applyGuest(${i})"><b>${esc(m.firstName)} ${esc(m.lastName)}</b><span>${esc(m.phone||'—')} · ${esc(m.citizen)}</span></div>`).join(''):'';
 }
 function applyGuest(i){
   const m=regState.suggest[i]; const g=regState.guests[0];
@@ -2990,17 +2990,17 @@ function drawRegister(){
           ${g.main?P('Asosiy mehmon'):(LANG==='ru'?'Гость '+(i+1):LANG==='en'?'Guest '+(i+1):'Mehmon '+(i+1))}</span>
         ${!g.main?`<span class="rm" onclick="rmGuest(${i})">✕</span>`:''}</div>
       <div class="field"><label>${P("Fuqaroligi")}</label>
-        <input list="countryList" value="${g.citizen}" oninput="regG(${i},'citizen',this.value)"></div>
+        <input list="countryList" value="${esc(g.citizen)}" oninput="regG(${i},'citizen',this.value)"></div>
       <div class="field"><label>${P("Familiyasi")}</label><input value="${esc(g.lastName)}" oninput="regG(${i},'lastName',this.value)${g.main?';regRecognize()':''}" placeholder="Familiya"></div>
       <div class="field" style="position:relative"><label>${P("Ismi")}</label>
         <input value="${esc(g.firstName)}" oninput="regG(${i},'firstName',this.value)${g.main?';regRecognize()':''}" placeholder="Ism" autocomplete="off">
         ${g.main?'<div id="regSuggest" class="suggest-box"></div>':''}</div>
       <div class="field"><label>${P("Jinsi")}</label><select onchange="regG(${i},'gender',this.value)"><option${g.gender==='Erkak'?' selected':''}>Erkak</option><option${g.gender==='Ayol'?' selected':''}>Ayol</option></select></div>
       <div class="field"><label>${P("Tug'ilgan sanasi")}</label><input type="text" inputmode="numeric" value="${g.birth}" oninput="regBirth(${i},this)" placeholder="09.09.2004" maxlength="10"></div>
-      <div class="field"><label>${P("Pasport seriyasi")}</label><input value="${g.passport||''}" oninput="regG(${i},'passport',this.value)" placeholder="AB 1234567" style="text-transform:uppercase"></div>
-      <div class="field"><label>${P("Telefon raqami")}</label><input type="text" inputmode="tel" value="${g.phone||''}" oninput="regG(${i},'phone',this.value)${g.main?';regState.phone=this.value;regRecognize()':''}" placeholder="+998 __ ___ __ __"></div>
-      <div class="field"><label>${P("Email")}</label><input value="${g.email||''}" oninput="regG(${i},'email',this.value)${g.main?';regState.email=this.value':''}" placeholder="mehmon@mail.com"></div>
-      <div class="field"><label>${P("Premechaniya (izoh)")}</label><input value="${g.premicha||''}" oninput="regG(${i},'premicha',this.value)${g.main?';regState.premicha=this.value':''}" placeholder="Izoh (ixtiyoriy)"></div>
+      <div class="field"><label>${P("Pasport seriyasi")}</label><input value="${esc(g.passport||'')}" oninput="regG(${i},'passport',this.value)" placeholder="AB 1234567" style="text-transform:uppercase"></div>
+      <div class="field"><label>${P("Telefon raqami")}</label><input type="text" inputmode="tel" value="${esc(g.phone||'')}" oninput="regG(${i},'phone',this.value)${g.main?';regState.phone=this.value;regRecognize()':''}" placeholder="+998 __ ___ __ __"></div>
+      <div class="field"><label>${P("Email")}</label><input value="${esc(g.email||'')}" oninput="regG(${i},'email',this.value)${g.main?';regState.email=this.value':''}" placeholder="mehmon@mail.com"></div>
+      <div class="field"><label>${P("Premechaniya (izoh)")}</label><input value="${esc(g.premicha||'')}" oninput="regG(${i},'premicha',this.value)${g.main?';regState.premicha=this.value':''}" placeholder="Izoh (ixtiyoriy)"></div>
     </div>`).join('')}</div>
     <datalist id="countryList">${countries.map(c=>`<option value="${c}">`).join('')}</datalist>`;
 
@@ -3195,7 +3195,7 @@ function openFolio(id,keepEdit){
   const gForm=`<div class="guestgrid" style="display:grid;gap:12px;grid-template-columns:repeat(${Math.min(Math.max(folioEdit.guests.length,1),3)},minmax(0,1fr))">${folioEdit.guests.map((g,i)=>`
     <div class="guestblock">
       <div class="gh">${i===0?P('Asosiy mehmon'):(LANG==='ru'?'Спутник '+i:LANG==='en'?'Companion '+i:'Sherigi '+i)}${i>0?`<span class="rm" onclick="fRmGuest('${id}',${i})">✕</span>`:''}</div>
-      <div class="field"><label>${P("Fuqaroligi")}</label><input list="folioCountry" value="${g.citizen}" oninput="folioEdit.guests[${i}].citizen=this.value" onchange="folioAutoSave('${id}')"></div>
+      <div class="field"><label>${P("Fuqaroligi")}</label><input list="folioCountry" value="${esc(g.citizen)}" oninput="folioEdit.guests[${i}].citizen=this.value" onchange="folioAutoSave('${id}')"></div>
       <div class="field"><label>${P("Familiya")}</label><input value="${esc(g.lastName)}" oninput="folioEdit.guests[${i}].lastName=this.value" onchange="folioAutoSave('${id}')"></div>
       <div class="field"><label>${P("Ism")}</label><input value="${esc(g.firstName)}" oninput="folioEdit.guests[${i}].firstName=this.value" onchange="folioAutoSave('${id}')"></div>
       <div class="field"><label>${P("Jinsi")}</label><select onchange="folioEdit.guests[${i}].gender=this.value;folioAutoSave('${id}')"><option${g.gender==='Erkak'?' selected':''}>Erkak</option><option${g.gender==='Ayol'?' selected':''}>Ayol</option></select></div>
@@ -3231,7 +3231,7 @@ function openFolio(id,keepEdit){
       <span id="folioSaveTag" style="font-size:12px;font-weight:600;color:var(--green-ink);opacity:.45;transition:.3s">⚡ avtomatik saqlanadi</span>
     </div>
     ${s.status==='in'?`<div class="mini-hint" style="padding:8px 0 0">Check-in'dan keyingi o'zgarishlar menejer jurnaliga yoziladi.</div>`:''}`
-    : `${(s.extra&&s.extra.length)?`<div class="folio-meta"><div class="m"><div class="k">Qo'shimcha mehmonlar</div><div class="val">${s.extra.map(e=>e.firstName+' '+e.lastName).join(', ')}</div></div></div>`:''}${s.premicha?`<div class="hint">📝 ${esc(s.premicha)}</div>`:''}`;
+    : `${(s.extra&&s.extra.length)?`<div class="folio-meta"><div class="m"><div class="k">Qo'shimcha mehmonlar</div><div class="val">${esc(s.extra.map(e=>e.firstName+' '+e.lastName).join(', '))}</div></div></div>`:''}${s.premicha?`<div class="hint">📝 ${esc(s.premicha)}</div>`:''}`;
 
   const M=document.createElement('div');
   M.className='overlay'; M.id='folioOverlay';
@@ -3241,7 +3241,7 @@ function openFolio(id,keepEdit){
       <div class="folio-head">
         <div class="fh-l">
           <h3>${esc(s.firstName)} ${esc(s.lastName)}</h3>
-          <div class="sub">${s.gender} · ${s.citizen} · ${s.phone||'—'}${s.passport?' · 🪪 '+s.passport:''}</div>
+          <div class="sub">${s.gender} · ${esc(s.citizen)} · ${esc(s.phone||'—')}${s.passport?' · 🪪 '+esc(s.passport):''}</div>
         </div>
         <div class="bal"><div class="k">${bal>0?'Qarz':'Balans'}</div><div class="amt" style="color:${bal>0?'var(--red-ink)':'var(--green-ink)'}">${money(Math.abs(bal))}</div></div>
       </div>
@@ -3250,7 +3250,7 @@ function openFolio(id,keepEdit){
         <div class="m"><div class="k">Chiqish</div><div class="val">${s.status==='out'?`${fmt(s.checkoutDate||s.outDate)} · ${s.checkoutTime||''}`:fmt(s.outDate)}</div></div>
         <div class="m"><div class="k">1 kunlik narx</div><div class="val money">${money(s.nightly||Math.round(s.price/nights(s)))}</div></div>
         <div class="m"><div class="k">Kanal</div>${(role!=='owner'&&s.status!=='canceled')
-          ? `<input class="val" list="folioChanList" value="${s.company||''}" onchange="setChannel('${id}',this.value)" placeholder="Walk-in..."
+          ? `<input class="val" list="folioChanList" value="${esc(s.company||'')}" onchange="setChannel('${id}',this.value)" placeholder="Walk-in..."
                style="width:100%;border:1px solid var(--line);border-radius:7px;padding:4px 8px;background:#fff;font-family:inherit">
              <datalist id="folioChanList">${['Walk-in (ko\'chadan)','Booking.com','Telefon orqali','Agentlik','Korporativ','Ostrovok','Airbnb','Expedia'].concat(companies).filter((v,i,a)=>a.indexOf(v)===i).map(c=>`<option value="${c}">`).join('')}</datalist>`
           : `<div class="val">${esc(s.company)}</div>`}</div>
@@ -3273,7 +3273,7 @@ function openFolio(id,keepEdit){
       <div style="font-weight:600;font-size:13px;margin:18px 0 4px">Hisob (nachisleniye)</div>
       <div class="txnlist">
         <div class="txn"><div class="ic chg">🛏</div><div class="desc"><b>Yashash · ${money(s.price)}</b><span>${nights(s)} tun × ${money(s.nightly||Math.round(s.price/nights(s)))}</span></div></div>
-        ${(s.charges||[]).map(c=>`<div class="txn"><div class="ic chg">＋</div><div class="desc"><b>${c.name} · ${money(c.amount)}</b><span>${c.premicha?c.premicha+' · ':''}${c.time} · ${c.by}</span></div></div>`).join('')}
+        ${(s.charges||[]).map(c=>`<div class="txn"><div class="ic chg">＋</div><div class="desc"><b>${esc(c.name)} · ${money(c.amount)}</b><span>${c.premicha?esc(c.premicha)+' · ':''}${c.time} · ${c.by}</span></div></div>`).join('')}
         <div class="txn" style="border-top:1px dashed var(--line-2)"><div class="desc" style="text-align:right;font-weight:700">Jami hisob: ${money(totalDue(s))}</div></div>
       </div>
       <div style="font-weight:600;font-size:13px;margin:16px 0 4px">To'lovlar tarixi</div>
@@ -3284,7 +3284,7 @@ function openFolio(id,keepEdit){
       <div class="hist-list">
         ${s.history.slice().map(h=>`<div class="hist-item">
           <div class="hd ${['warn','correct'].includes(h.type)?'warn':h.type==='refund'?'ref':h.type==='move'||h.type==='edit'?'move':'ok'}"></div>
-          <div style="flex:1"><b>${h.text}</b>${h.amount?` · <span class="money">${money(h.amount)}</span>`:''}${h.reason?`<div style="color:var(--amber-ink);font-size:12px">💬 ${esc(h.reason)}</div>`:''}
+          <div style="flex:1"><b>${esc(h.text)}</b>${h.amount?` · <span class="money">${money(h.amount)}</span>`:''}${h.reason?`<div style="color:var(--amber-ink);font-size:12px">💬 ${esc(h.reason)}</div>`:''}
             <div style="color:var(--txt-3);font-size:11px">${h.by} · ${h.time}</div></div>
         </div>`).join('')}
       </div>`:''}
@@ -3627,7 +3627,7 @@ function drawIzmenit(){
   const chargeRows=a.charges.length? a.charges.map((c,i)=>`
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
       <input type="checkbox" ${c.keep?'checked':''} onchange="izmenitState.charges[${i}].keep=this.checked;drawIzmenit()" title="Belgini olsangiz — xizmat o'chadi">
-      <span style="flex:1;font-size:13px${c.keep?'':';text-decoration:line-through;opacity:.5'}">${c.name}</span>
+      <span style="flex:1;font-size:13px${c.keep?'':';text-decoration:line-through;opacity:.5'}">${esc(c.name)}</span>
       <input type="text" inputmode="numeric" onkeydown="return blockNeg(event)" onpaste="return cleanPaste(event)" value="${sepNum(c.amount)}" oninput="fmtSomInput(this);izmenitState.charges[${i}].amount=unNum(this.value)" style="width:130px;padding:6px 8px;border:1.5px solid var(--line);border-radius:6px" ${c.keep?'':'disabled'}>
     </div>`).join('') : '<div class="mini-hint" style="padding:0">Xizmat yo\'q</div>';
   const html=`<div class="overlay" id="izOverlay" onclick="if(event.target===this)closeIzmenit()">
@@ -4248,7 +4248,7 @@ function openInvoice(id){
         <thead><tr><th>${P("Tavsif")}</th><th style="text-align:right">${P("Miqdor")}</th><th style="text-align:right">${P("Summa")}</th></tr></thead>
         <tbody>
           <tr><td>Yashash (${rooms.find(r=>r.n===s.room)?.t||'Xona'})</td><td style="text-align:right">${n} tun × ${money(rate)}</td><td style="text-align:right" class="money">${money(s.price)}</td></tr>
-          ${(s.charges||[]).map(c=>`<tr><td>${c.name}</td><td style="text-align:right">qo'shimcha</td><td style="text-align:right" class="money">${money(c.amount)}</td></tr>`).join('')}
+          ${(s.charges||[]).map(c=>`<tr><td>${esc(c.name)}</td><td style="text-align:right">qo'shimcha</td><td style="text-align:right" class="money">${money(c.amount)}</td></tr>`).join('')}
         </tbody>
       </table>
       <div style="font-weight:600;font-size:13px;margin:16px 0 4px">To'lovlar</div>
@@ -4332,14 +4332,14 @@ function guestRowsHtml(){
   if(!list.length) return '<tr><td colspan="8" style="text-align:center;color:var(--txt-3);padding:30px">Topilmadi</td></tr>';
   return list.map(s=>{const pm=s.payments.filter(p=>p.type==='pay'); const method=pm.length?[...new Set(pm.map(p=>methodLabel(p.method)))].join('/'):'—';
     return `<tr onclick="openFolio('${s.id}')" style="cursor:pointer">
-      <td><b>${esc(s.firstName)} ${esc(s.lastName)}</b><br><span style="font-size:11px;color:var(--txt-3)">${s.phone||'—'} · ${s.citizen}</span></td>
+      <td><b>${esc(s.firstName)} ${esc(s.lastName)}</b><br><span style="font-size:11px;color:var(--txt-3)">${esc(s.phone||'—')} · ${esc(s.citizen)}</span></td>
       <td><b class="mono">${s.room}</b></td>
       <td>${esc(s.company)}</td>
       <td>${fmt(s.inDate)} · ${s.arrTime}</td>
       <td>${s.status==='out'?fmt(s.checkoutDate||s.outDate)+' · '+(s.checkoutTime||''):'<span style="color:var(--txt-3)">—</span>'}</td>
       <td class="money">${money(paidSum(s))}</td>
       <td><span class="tag ${s.payments.some(p=>p.method==='karta')?'card':'cash'}">${method}</span></td>
-      <td style="font-size:12px;color:var(--txt-2);max-width:160px">${s.premicha||'—'}</td>
+      <td style="font-size:12px;color:var(--txt-2);max-width:160px">${esc(s.premicha||'—')}</td>
     </tr>`;}).join('');
 }
 function renderGuests(){
@@ -4365,7 +4365,7 @@ function renderGuests(){
 /* ================= KOMPANIYALAR (Clock PMS+ uslubi) ================= */
 function renderCompanies(){
   const rows=companyData.map((c,i)=>`<tr>
-    <td><b>${c.name}</b></td><td>${c.contract||'—'}</td><td>${c.phone||'—'}</td><td>${c.email||'—'}</td>
+    <td><b>${esc(c.name)}</b></td><td>${esc(c.contract||'—')}</td><td>${esc(c.phone||'—')}</td><td>${esc(c.email||'—')}</td>
     <td style="font-size:12px;color:var(--txt-2)">${c.iin||'—'}</td>
     <td><button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" onclick="rmCompany(${i})">✕</button></td></tr>`).join('')
     ||'<tr><td colspan=6 style="text-align:center;color:var(--txt-3);padding:24px">Kompaniya yo\'q</td></tr>';
@@ -4405,7 +4405,7 @@ function renderDebtors(){
   const rows=debtStays.map(s=>`<tr onclick="openFolio('${s.id}')" style="cursor:pointer">
     <td><b>${esc(s.company)}</b></td>
     <td><b class="mono">${s.room}</b></td>
-    <td>${esc(s.firstName)} ${esc(s.lastName)}<br><span style="font-size:11px;color:var(--txt-3)">${s.phone||'—'}</span></td>
+    <td>${esc(s.firstName)} ${esc(s.lastName)}<br><span style="font-size:11px;color:var(--txt-3)">${esc(s.phone||'—')}</span></td>
     <td>${fmt(s.inDate)} → ${fmt(s.outDate)}</td>
     <td class="money">${money(totalDue(s))}</td>
     <td class="money" style="color:var(--green-ink)">${money(paidSum(s))}</td>
@@ -4462,14 +4462,14 @@ function renderChannel(){
   const connected=channels.filter(c=>c.connected).length;
   const chCards=channels.map((c,i)=>`<div class="ch-card">
     <div class="ch-logo" style="background:${c.color}">${c.name.charAt(0)}</div>
-    <div style="flex:1"><b>${c.name}</b><div style="font-size:11px;color:var(--txt-3)">${c.connected?'Sinxron: '+c.sync:'Ulanmagan'}</div></div>
+    <div style="flex:1"><b>${esc(c.name)}</b><div style="font-size:11px;color:var(--txt-3)">${c.connected?'Sinxron: '+c.sync:'Ulanmagan'}</div></div>
     <button class="btn ${c.connected?'btn-ghost':'btn-primary'}" style="padding:6px 14px;font-size:12px" onclick="toggleChannel(${i})">${c.connected?'Uzish':'Ulash'}</button>
   </div>`).join('');
   const pend=pendingBookings.map(b=>{
     const inD=new Date(base.getTime()+b.inOff*DAY), outD=new Date(inD.getTime()+b.nights*DAY);
     return `<tr>
       <td><span class="tag card">${b.channel}</span></td>
-      <td><b>${esc(b.firstName)} ${esc(b.lastName)}</b><br><span style="font-size:11px;color:var(--txt-3)">${b.citizen} · ${esc(b.phone)}</span></td>
+      <td><b>${esc(b.firstName)} ${esc(b.lastName)}</b><br><span style="font-size:11px;color:var(--txt-3)">${esc(b.citizen)} · ${esc(b.phone)}</span></td>
       <td>${typeLabel(b.type)}</td>
       <td>${fmt(inD)} → ${fmt(outD)}<br><span style="font-size:11px;color:var(--txt-3)">${b.nights} tun</span></td>
       <td class="money">${money(b.price)}</td>
@@ -4705,9 +4705,9 @@ function renderNazorat(){
       <td style="white-space:nowrap;font-family:'JetBrains Mono';font-size:12px">${a.time}</td>
       <td><b class="mono">${a.room}</b></td>
       <td>${guestLink(a)}</td>
-      <td${isAdm?' style="color:var(--red-ink)"':''}>${a.text}${twoDate}</td>
+      <td${isAdm?' style="color:var(--red-ink)"':''}>${esc(a.text)}${twoDate}</td>
       <td class="money"${isAdm?' style="color:var(--red-ink)"':''}>${amt}</td>
-      <td>${a.reason?'💬 '+a.reason:'—'}</td>
+      <td>${a.reason?'💬 '+esc(a.reason):'—'}</td>
       <td style="white-space:nowrap">${byCell}</td>
     </tr>`;
   });
@@ -5385,7 +5385,7 @@ function renderTolov(){
 
   const rows=shown.map(p=>`<tr onclick="openFolio('${p.sid}')" style="cursor:pointer">
     <td style="color:var(--txt-3);font-size:12px">${p.time}</td>
-    <td><b class="mono">${p.room}</b></td><td>${p.guest}</td>
+    <td><b class="mono">${p.room}</b></td><td>${esc(p.guest)}</td>
     <td>${p.type==='ref'?'<span class="tag" style="background:var(--red-bg);color:var(--red-ink)">Vozvrat</span>':'<span class="tag paid">To\'lov</span>'}</td>
     <td><span class="tag ${methodTag(p.method)}">${p.method==='karta'?(p.card||'Karta'):methodLabel(p.method)}</span></td>
     <td style="color:var(--txt-3);font-size:12px">${p.by}</td>
@@ -5393,7 +5393,7 @@ function renderTolov(){
     ||'<tr><td colspan=7 style="text-align:center;color:var(--txt-3)">Bu davrda yozuv yo\'q</td></tr>';
 
   const debtRows=debtStays.map(s=>`<tr onclick="openFolio('${s.id}')" style="cursor:pointer">
-    <td><b class="mono">${s.room}</b></td><td>${esc(s.firstName)} ${esc(s.lastName)}<br><span style="font-size:11px;color:var(--txt-3)">${s.phone||'—'}</span></td>
+    <td><b class="mono">${s.room}</b></td><td>${esc(s.firstName)} ${esc(s.lastName)}<br><span style="font-size:11px;color:var(--txt-3)">${esc(s.phone||'—')}</span></td>
     <td class="money">${money(s.price)}</td><td class="money" style="color:var(--green-ink)">${money(paidSum(s))}</td>
     <td class="money" style="color:var(--red-ink)"><b>${money(balance(s))}</b></td></tr>`).join('')
     ||'<tr><td colspan=5 style="text-align:center;color:var(--txt-3)">Qarzdorlik yo\'q ✓</td></tr>';
@@ -5474,7 +5474,7 @@ function renderStatistika(){
   let bestI=0; for(let i=1;i<12;i++){ if(monthRev[i]>monthRev[bestI]) bestI=i; }
   const bestVal=Math.round(monthRev[bestI]/MLN);
   const bars=months.map((m,i)=>`<div class="b ${i===base.getMonth()?'today':''}"><div class="vv">${data[i]}</div><div class="f" style="height:${data[i]/max*100}%"></div><div class="lb">${m}</div></div>`).join('');
-  const chanRows=statChannels.map((c,i)=>`<tr><td><b>${c.name}</b></td>
+  const chanRows=statChannels.map((c,i)=>`<tr><td><b>${esc(c.name)}</b></td>
     <td style="width:50%"><div style="background:var(--panel-2);border-radius:20px;height:9px;overflow:hidden"><div style="width:${c.pct}%;height:100%;background:linear-gradient(90deg,#60a5fa,#2563eb)"></div></div></td>
     <td class="money">${c.pct}%</td>
     <td><button class="btn btn-ghost" style="padding:4px 9px;font-size:12px" onclick="rmChannel(${i})">✕</button></td></tr>`).join('');
@@ -6179,7 +6179,7 @@ function renderKunlik(){
         const isAdm=/admin/i.test(a.by||'');
         return `<tr${isAdm?' style="border-left:3px solid var(--red)"':''}>
           <td style="white-space:nowrap;font-size:12px">${a.time}</td><td><b class="mono">${a.room}</b></td>
-          <td${isAdm?' style="color:var(--red-ink)"':''}>${a.text}${a.reason?`<div style="font-size:11px;color:var(--txt-3)">💬 ${esc(a.reason)}</div>`:''}</td>
+          <td${isAdm?' style="color:var(--red-ink)"':''}>${esc(a.text)}${a.reason?`<div style="font-size:11px;color:var(--txt-3)">💬 ${esc(a.reason)}</div>`:''}</td>
           <td class="money">${a.amount?somNum(a.amount):'—'}</td>
           <td style="white-space:nowrap">${isAdm?`<b style="color:var(--red-ink)">${a.by}</b>`:a.by}</td></tr>`;
       }).join('') :`<tr><td colspan="5" style="text-align:center;color:var(--txt-3);padding:12px">Amal yo'q</td></tr>`}
