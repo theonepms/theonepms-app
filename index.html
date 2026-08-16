@@ -5402,7 +5402,7 @@ function renderTolov(){
 
   const debtRows=debtStays.map(s=>`<tr onclick="openFolio('${s.id}')" style="cursor:pointer">
     <td><b class="mono">${s.room}</b></td><td>${esc(s.firstName)} ${esc(s.lastName)}<br><span style="font-size:11px;color:var(--txt-3)">${esc(s.phone||'—')}</span></td>
-    <td class="money">${money(s.price)}</td><td class="money" style="color:var(--green-ink)">${money(paidSum(s))}</td>
+    <td class="money">${money(totalDue(s))}</td><td class="money" style="color:var(--green-ink)">${money(paidSum(s))}</td>
     <td class="money" style="color:var(--red-ink)"><b>${money(balance(s))}</b></td></tr>`).join('')
     ||'<tr><td colspan=5 style="text-align:center;color:var(--txt-3)">Qarzdorlik yo\'q ✓</td></tr>';
 
@@ -5441,7 +5441,7 @@ function renderTolov(){
     </table></div>
 
   <div class="panel"><div class="panel-h"><h3>${P("Qardorlik ro'yxati")}</h3><span class="spacer"></span><span class="pill">${debtStays.length} ta</span></div>
-    <table class="data"><thead><tr><th>${P("Xona")}</th><th>${P("Mehmon")}</th><th>${P("Narx")}</th><th>${P("To'langan")}</th><th>${P("Qarz")}</th></tr></thead><tbody>${debtRows}</tbody></table></div>`;
+    <table class="data"><thead><tr><th>${P("Xona")}</th><th>${P("Mehmon")}</th><th>${P("Jami hisob")}</th><th>${P("To'langan")}</th><th>${P("Qarz")}</th></tr></thead><tbody>${debtRows}</tbody></table></div>`;
 }
 
 /* ================= STATISTIKA ================= */
