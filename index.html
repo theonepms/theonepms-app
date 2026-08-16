@@ -3973,7 +3973,7 @@ function actMethodHtml(){
 }
 function actSetMethod(m){ actState.method=m; const el=document.getElementById('actMethod'); if(el)el.innerHTML=actMethodHtml(); }
 function closeAction(){document.getElementById('actOverlay')?.remove();actState=null;}
-function commitAction(){
+async function commitAction(){
   const a=actState, s=stays.find(x=>x.id===a.id);
   const stamp=fmtShort(base)+' '+uzTime();
   /* ⚠️ HUQUQ NAZORATI — tugma yashirin bo'lsa ham, bu yerdan o'tolmaydi */
@@ -3988,6 +3988,11 @@ function commitAction(){
   const R=a.reason?` · Sabab: ${esc(a.reason)}`:'';
   if(a.kind==='pay'){
     const amt=+a.amount; if(!amt){toast('Summani kiriting.',false);return;}
+    // 🛡 #018 — qarzdan ko'p to'lov (ehtimol ortiqcha nol). Ogohlantiramiz.
+    const _bal=balance(s);
+    if(_bal>=0 && amt>_bal && (amt-_bal)>1){
+      if(!(await askConfirm(`To'lov qarzdan ${money(amt-_bal)} ko'p.\n\nKiritilgan: ${money(amt)}\nQarz: ${money(_bal>0?_bal:0)}\n\nAvans/depozit bo'lsa — davom eting. Xato (ortiqcha nol) bo'lsa — bekor qiling.`,{yes:'Ha, davom etaman',no:'Bekor'}))) return;
+    }
     s.payments.push({amount:amt,method:a.method,card:a.method==='karta'?a.card:'',type:'pay',time:stamp,ts:new Date(base),by:role==='admin'?'Admin':'Menejer'});
     if(s.status==='in')logAction(s,'money',`Check-in'dan keyin to'lov (${a.method==='karta'?a.card:'naxt'})`,amt);
     toast('To\'lov qo\'shildi ✓',true);
@@ -4084,6 +4089,9 @@ function commitAction(){
     }
     deletedLocally.add(s.id);
     stays=stays.filter(x=>x.id!==s.id);
+    // 🛡 #009 — darhol serverdan o'chiramiz (F5 bosilsa bekor qilingan bron qaytmasin).
+    //    Xato bo'lsa deletedLocally'da qoladi va debounce-saqlash qayta urinadi.
+    if(SB){ try{ SB.from('stays').delete().eq('id', s.id).then(r=>{ if(!(r&&r.error)) deletedLocally.delete(s.id); }, ()=>{}); }catch(e){} }
     toast("Bron o'chirildi - shaxmatkada iz qolmadi ✓",true);
     closeAction(); closeFolio(); render(); return;
   } else if(a.kind==='uncancel'){
@@ -5925,15 +5933,25 @@ function renderAudit(){
       ${leaving.length?`⛔ Avval ${leaving.length} ta xonani hal qiling`:`🌙 Auditni yakunlash → ${fmt(new Date(base.getTime()+DAY))} ga o'tish`}</button>
   </div>`;
 }
+let _auditBusy=false;
 async function runAudit(){
+  // 🛡 #016 — audit ishlab turganda qayta bosishni bekor qilamiz
+  if(_auditBusy) return;
   const leaving=stays.filter(s=>s.status==='in' && stripTime(s.outDate).getTime()<=base.getTime());
   if(leaving.length){
     toast(`Avval ${leaving.length} ta xonani hal qiling: ${leaving.slice(0,5).map(s=>s.room).join(', ')}${leaving.length>5?'...':''}`,false);
     return;
   }
+  // 🛡 #016 — yaqinda (3 daqiqa ichida) audit qilingan bo'lsa, tasodifan ikkinchi marta
+  //    bosib kunni 2 kunga surib yubormaslik uchun qo'shimcha tasdiq so'raymiz.
+  const _lastAuditTs=(auditHistory&&auditHistory[0]&&auditHistory[0].ts)||0;
+  if(_lastAuditTs && (Date.now()-_lastAuditTs) < 3*60*1000){
+    if(!(await askConfirm("Siz hozirgina (bir necha daqiqa oldin) kunni yopdingiz.\n\nRostdan yana bir kun oldinga suramizmi? Odatda bu kerak emas — tasodifan ikki marta bosilgan bo'lishi mumkin.",{danger:true,yes:'Ha, yana suraman',no:"Yo'q, bekor"}))) return;
+  }
   // ⚠️ Tasdiq — tasodifan bosilmasin, avval tekshirib chiqilsin
   const _newDay=fmt(new Date(base.getTime()+DAY));
   if(!(await askConfirm(`🌙 Nochnoy auditni yakunlaysizmi?\n\nKun yopiladi va ${_newDay} ga o'tadi — bu qaytarib bo'lmaydi.\n\nAvval tekshirib chiqing:\n• bugungi barcha to'lovlar\n• chiqishlar (check-out)\n• kassa to'g'rimi?`,{yes:'Ha, yakunlayman',no:'Bekor — tekshiraman',danger:true}))) return;
+  _auditBusy=true;   // 🛡 #016 — endi ikkinchi bosish o'tmaydi
   const oldDay=fmt(base);
   // Kunni +1 kunga surish — butun dasturda (base joyida o'zgaradi)
   base.setTime(base.getTime()+DAY);
@@ -5951,6 +5969,7 @@ async function runAudit(){
   sendAuditToTelegram(oldDay);        // 📱 menejerga hisobot + Excel
   render(); buildNav(); go('dashboard');
   toast('Nochnoy audit yakunlandi. Yangi kun: '+fmt(base)+' ✓',true);
+  _auditBusy=false;   // 🛡 #016
 }
 
 /* ═══ 📱 NOCHNOY AUDIT HISOBOTI — menejer Telegramiga ═══ */
