@@ -6220,10 +6220,14 @@ setTimeout(()=>{ cloudBadge(cloudReady?'☁️ Serverga ulandi ✓':'⚠️ Serv
 
 /* --- Sanalarni tiklash (serverdan matn sifatida keladi) --- */
 function reviveStay(s){
+  if(!s || typeof s!=='object') return null;
   s.inDate=new Date(s.inDate); s.outDate=new Date(s.outDate);
-  if(s.checkoutDate) s.checkoutDate=new Date(s.checkoutDate);
-  if(s._preOut) s._preOut=new Date(s._preOut);
-  (s.payments||[]).forEach(p=>{ if(p.ts) p.ts=new Date(p.ts); });
+  // 🛡 Sana buzilgan bo'lsa — bu yozuv yaroqsiz. null qaytaramiz, yuklovchi uni tashlab ketadi
+  //    (bitta nuqson butun dasturni yiqitmasligi uchun).
+  if(isNaN(s.inDate.getTime()) || isNaN(s.outDate.getTime())) return null;
+  if(s.checkoutDate){ const d=new Date(s.checkoutDate); s.checkoutDate=isNaN(d.getTime())?null:d; }
+  if(s._preOut){ const d=new Date(s._preOut); s._preOut=isNaN(d.getTime())?null:d; }
+  (s.payments||[]).forEach(p=>{ if(p.ts){ const d=new Date(p.ts); p.ts=isNaN(d.getTime())?null:d; } });
   return s;
 }
 
@@ -6234,7 +6238,11 @@ async function cloudLoad(){
     // 1) mehmonlar
     const {data:rows,error:e1}=await SB.from('stays').select('data').eq('hotel_id',HOTEL_ID);
     if(e1) throw e1;
-    stays=(rows||[]).map(r=>reviveStay(r.data));
+    // 🛡 Har bir yozuvni himoya to'ri ichida yuklaymiz — bittasi buzilgan bo'lsa,
+    //    uni tashlab ketamiz, qolgani normal yuklanadi (butun dastur qulamasin).
+    let _badStays=0;
+    stays=(rows||[]).map(r=>{ try{ const s=reviveStay(r&&r.data); if(!s){_badStays++;return null;} return s; }catch(e){ _badStays++; return null; } }).filter(Boolean);
+    if(_badStays) console.warn('THEONEPMS: '+_badStays+" ta yozuv o'qib bo'lmadi — tashlab ketildi");
 
     // 2) nazorat jurnali
     const {data:logs,error:e2}=await SB.from('audit_log').select('entry').eq('hotel_id',HOTEL_ID).order('id',{ascending:false}).limit(3000);
