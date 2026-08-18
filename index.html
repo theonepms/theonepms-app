@@ -3115,6 +3115,12 @@ function saveReg(status){
     });
     stays.push(s); created.push(s);
   });
+  // 🗒 Admin nazoratiga yozamiz — har bir yangi bron/check-in (+ to'lov)
+  created.forEach(cs=>{
+    logAction(cs,'ok',(status==='in'?'Check-in (yangi mehmon joylashtirildi)':'Yangi bron yaratildi')+`: ${cs.room}-xona · ${nights(cs)} tun × ${money(cs.nightly||0)}`,0);
+    const fp=(cs.payments&&cs.payments[0]&&cs.payments[0].type==='pay')?cs.payments[0]:null;
+    if(fp&&fp.amount>0) logAction(cs,'money',`Bron/registratsiya to'lovi (${fp.method==='karta'?(fp.card||'karta'):'naxt'})`,fp.amount);
+  });
   closeReg(); render();
   toast((status==='in'?'Check-in bajarildi':'Bron saqlandi')+(r.rooms.length>1?` (${r.rooms.length} xona)`:'')+' ✓',true);
 }
@@ -3348,7 +3354,7 @@ function saveFolio(id){
       changes.push(`Bron sanasi → ${fmt(nd)}`);
     }
   }
-  if((s.status==='in'||s.status==='out') && changes.length) logAction(s,'edit','Ma\'lumot tahrirlandi: '+changes.join('; '),0);
+  if(changes.length) logAction(s,(s.status==='in'||s.status==='out')?'edit':'ok','Ma\'lumot tahrirlandi: '+changes.join('; '),0);
   openFolio(id); render(); toast('Ma\'lumotlar saqlandi ✓',true);
 }
 
@@ -3368,6 +3374,7 @@ function logAction(s,type,text,amount,reason){
 function doCheckin(id){
   const s=stays.find(x=>x.id===id); if(!s)return;
   s.status='in';
+  logAction(s,'ok','Check-in qilindi (bron → yashamoqda)',0);
   closeFolio(); render(); toast('Check-in bajarildi ✓',true);
 }
 /* ================= ADMIN HUQUQLARI (markaziy nazorat) =================
@@ -3994,7 +4001,7 @@ async function commitAction(){
       if(!(await askConfirm(`To'lov qarzdan ${money(amt-_bal)} ko'p.\n\nKiritilgan: ${money(amt)}\nQarz: ${money(_bal>0?_bal:0)}\n\nAvans/depozit bo'lsa — davom eting. Xato (ortiqcha nol) bo'lsa — bekor qiling.`,{yes:'Ha, davom etaman',no:'Bekor'}))) return;
     }
     s.payments.push({amount:amt,method:a.method,card:a.method==='karta'?a.card:'',type:'pay',time:stamp,ts:new Date(base),by:role==='admin'?'Admin':'Menejer'});
-    if(s.status==='in')logAction(s,'money',`Check-in'dan keyin to'lov (${a.method==='karta'?a.card:'naxt'})`,amt);
+    logAction(s,'money',`To'lov qabul qilindi (${a.method==='karta'?a.card:'naxt'})`,amt);
     toast('To\'lov qo\'shildi ✓',true);
   } else if(a.kind==='refund'){
     /* ===== YAGONA VOZVRAT ===== */
@@ -4544,8 +4551,9 @@ function shubhaList(){
     // OWNER hammasini, MENEJER faqat admin+o'zinikini ko'radi (owner amali menejerga kerak emas)
     if(role==='manager' && byRole==='owner') return;
     let lvl=null, why='';
-    if(/PUL QAYTARILDI/i.test(txt)){ lvl='high'; why='Kassadan pul qaytarildi (vozvrat)'; }
-    else if(/narx/i.test(txt) && /o'zgar|korreksiya|→/i.test(txt)){ lvl='mid'; why='Narx o\'zgartirildi'; }
+    if(/PUL QAYTARILDI/i.test(txt)){ lvl='high'; why='↩ Vozvrat — kassadan pul qaytarildi'; }
+    else if(/HISOBDAN CHEGIRILDI|HISOBDAN OLIB TASHLANDI|hisobdan chegirma|Yashash vozvrati/i.test(txt)){ lvl='ded'; why='➖ Hisobdan chegirildi — pul chiqmadi, qarz kamaydi'; }
+    else if(/narx/i.test(txt) && /o'zgar|korreksiya|→/i.test(txt)){ lvl='mid'; why='💰 Narx o\'zgartirildi'; }
     if(!lvl) return;
     const key=(a.day||'')+'|'+(a.time||'')+'|'+(a.room||'')+'|'+txt.slice(0,40);
     out.push({key,idx,a,lvl,why,byRole});
@@ -4584,8 +4592,9 @@ function shubhaPatterns(list){
 function renderShubha(){
   if(role!=='manager' && role!=='owner') return `<div class="panel"><div class="empty-state">Bu bo'lim faqat menejer va egasi uchun.</div></div>`;
   const all=shubhaList();   // faqat vozvrat + narx o'zgarishi (barcha kunlar)
-  const refundsTotal=all.filter(x=>x.lvl==='high').length;   // vozvratlar
-  const pricesTotal=all.length-refundsTotal;                 // narx o'zgarishlari
+  const refundsTotal=all.filter(x=>x.lvl==='high').length;   // kassadan vozvratlar
+  const dedTotal=all.filter(x=>x.lvl==='ded').length;        // hisobdan chegirishlar
+  const pricesTotal=all.filter(x=>x.lvl==='mid').length;     // narx o'zgarishlari
 
   // barcha kunlar (yangi -> eski) — "Admin nazorati" kabi
   const days=[...new Set(all.map(x=>x.a.day||ymd(base)))].sort().reverse();
@@ -4611,13 +4620,13 @@ function renderShubha(){
       const cnt=shown.filter(y=>(y.a.day||ymd(base))===aday).length;
       rows+=`<div class="arr-item" style="background:var(--panel-2);padding:9px 16px;font-weight:700;color:var(--brand-ink);font-size:12.5px">📅 ${fmt(dObj)} · ${wdName(dObj.getDay())} <span style="color:var(--txt-3);font-weight:500">— ${cnt} ta</span></div>`;
     }
-    const isRef=(x.lvl==='high');
-    const col=isRef?'var(--red)':'var(--amber)';
-    const bg =isRef?'var(--red-bg)':'var(--amber-bg)';
-    const ink=isRef?'var(--red-ink)':'var(--amber-ink)';
+    const isMid=(x.lvl==='mid');
+    const col=isMid?'var(--amber)':'var(--red)';
+    const bg =isMid?'var(--amber-bg)':'var(--red-bg)';
+    const ink=isMid?'var(--amber-ink)':'var(--red-ink)';
     rows+=`<div class="arr-item" style="border-left:4px solid ${col};background:${bg};align-items:flex-start">
       <div class="who" style="flex:1">
-        <b style="color:${ink}">${isRef?'↩ Vozvrat (pul qaytarildi)':'💰 Narx o\'zgartirildi'}</b>
+        <b style="color:${ink}">${x.why}</b>
         <span style="display:block;margin-top:2px;color:var(--txt)">${esc(a.text)}</span>
         <span style="display:block;margin-top:2px">Xona <b>${esc(a.room||'—')}</b> · ${guestLink(a)}${a.amount?` · <b>${money(a.amount)}</b>`:''}</span>
         <span style="display:block;margin-top:2px;color:var(--txt-3)">
@@ -4629,9 +4638,10 @@ function renderShubha(){
   const title = showAll ? `Vozvrat va narx o'zgarishlari — HAMMASI (${all.length} ta)`
     : `Vozvrat va narx — ${fmt(new Date(shubhaDate.split('-')[0],+shubhaDate.split('-')[1]-1,+shubhaDate.split('-')[2]))}`;
   return `<div class="hint" style="background:var(--red-bg);color:var(--red-ink)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-    <span>Bu yerda faqat <b>pul vozvratlari</b> va <b>narx o'zgarishlari</b> — <b>sana bo'yicha ajratilgan</b>. Ismni bosing — bron ochiladi. Yozuvlar <b>hech qachon o'chmaydi</b>.</span></div>
+    <span>Bu yerda <b>kassadan vozvrat</b>, <b>hisobdan chegirish</b> va <b>narx o'zgarishlari</b> — <b>sana bo'yicha ajratilgan</b>. Ismni bosing — bron ochiladi. Yozuvlar <b>hech qachon o'chmaydi</b>.</span></div>
   <div class="stats">
-    <div class="stat"><div class="l">↩ Vozvratlar</div><div class="v" style="color:var(--red-ink)">${refundsTotal}</div></div>
+    <div class="stat"><div class="l">↩ Kassadan vozvrat</div><div class="v" style="color:var(--red-ink)">${refundsTotal}</div></div>
+    <div class="stat"><div class="l">➖ Hisobdan chegirish</div><div class="v" style="color:var(--red-ink)">${dedTotal}</div></div>
     <div class="stat"><div class="l">💰 Narx o'zgarishlari</div><div class="v" style="color:var(--amber-ink)">${pricesTotal}</div></div>
     <div class="stat"><div class="l">Jami yozuv</div><div class="v">${all.length}</div></div>
   </div>
@@ -4666,8 +4676,8 @@ function renderNazorat(){
   const days=[...new Set(auditLog.map(a=>a.day||ymd(base)))].sort().reverse();
 
   // ko'rsatiladigan yozuvlar: HAMMASI yoki tanlangan kun
-  const shownLog = (showAll ? auditLog.slice() : auditLog.filter(a=>(a.day||ymd(base))===nazDate)).reverse();
-  // auditLog unshift bilan yig'iladi -> [0] eng yangi. ESKI TEPADA, YANGI PASTDA bo'lishi uchun teskari qilamiz.
+  const shownLog = (showAll ? auditLog.slice() : auditLog.filter(a=>(a.day||ymd(base))===nazDate));
+  // auditLog unshift bilan yig'iladi -> [0] eng yangi. YANGI TEPADA, ESKI PASTDA (yangi kun tepada chiqadi).
 
   const dateBar=`<div class="panel" style="margin-bottom:14px"><div style="display:flex;align-items:center;gap:10px;padding:12px 16px;flex-wrap:wrap">
     <button class="btn ${showAll?'btn-primary':'btn-ghost'}" style="padding:8px 16px;font-size:13px" onclick="nazAll()">📋 Hammasi</button>
