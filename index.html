@@ -3764,6 +3764,25 @@ function reasonField(){
   return `<div class="field"><label>Sabab (majburiy — menejer ko'radi)</label>
     <textarea rows="2" oninput="actState.reason=this.value" placeholder="Masalan: mijoz shikoyat qildi, narx xato kiritilgan edi...">${esc(a.reason)}</textarea></div>`;
 }
+/* 🔧 Har bir to'lovdan hozir QANCHA qaytarish mumkin (allaqachon qaytarilgani ayiriladi).
+   Vozvratlar usul(+karta) bo'yicha o'sha to'lovga taqsimlanadi. Faqat qoldig'i borlari qaytadi. */
+function refundablePays(s){
+  const pool={};
+  (s.payments||[]).filter(p=>p.type==='ref').forEach(p=>{
+    const k=(p.method||'naxt')+'|'+(p.card||'');
+    pool[k]=(pool[k]||0)+(+p.amount||0);
+  });
+  const out=[];
+  (s.payments||[]).forEach((p,i)=>{
+    if(p.type!=='pay') return;
+    const k=(p.method||'naxt')+'|'+(p.card||'');
+    const used=Math.min(pool[k]||0, +p.amount||0);
+    pool[k]=(pool[k]||0)-used;
+    const remain=(+p.amount||0)-used;
+    if(remain>0) out.push({i,p,remain});
+  });
+  return out;
+}
 function drawActionModal(){
   const a=actState, s=stays.find(x=>x.id===a.id);
   const titles={pay:'To\'lov qo\'shish',price:'Narxni o\'zgartirish',refund:'↩ Vozvrat (qaytarish)',srefund:'Yashash vozvrati (hisobdan chegirma)',sadd:'Yashash qo\'shish (hisobga qo\'shish)',charge:'Xizmat qo\'shish (mini-bar, kir yuvish...)',cancel:'Bronni bekor qilish',extend:'Muddatni cho\'zish',correct:'Narx korreksiyasi (menejer)',checkout:'Check-out (chiqish)',earlylate:'Erta kirish / Kech chiqish',rebook:'Kelish sanasini o\'zgartirish',uncancel:'♻ Bekor qilishni qaytarish'};
@@ -3775,7 +3794,7 @@ function drawActionModal(){
     const totalPaid=(s.payments||[]).filter(p=>p.type==='pay').reduce((x,p)=>x+p.amount,0);
     const refundable=Math.max(0,totalPaid-totalRef);   // umumiy qaytarish mumkin bo'lgan pul
 
-    const pays=(s.payments||[]).map((p,i)=>({i,p})).filter(x=>x.p.type==='pay');
+    const pays=refundablePays(s);   // faqat hali qaytarilmagan (qoldig'i bor) to'lovlar
 
     // Xizmatlar: har biriga bekor qilingan summani moslab, QOLGANini hisoblaymiz
     const posCharges=(s.charges||[]).map((c,i)=>({i,c})).filter(x=>x.c.amount>0);
@@ -3800,7 +3819,7 @@ function drawActionModal(){
       ? pays.map(x=>`<div class="arr-item" style="cursor:pointer;${a.rSel==='pay:'+x.i?'background:var(--brand-bg,#eff4ff);border-color:var(--brand)':''}"
             onclick="actState.rSel='pay:${x.i}';actState.amount='';actState.method='${x.p.method}';actState.card='${x.p.card||''}';drawActionModal()">
           <div class="ic pay" style="width:34px;height:34px;border-radius:9px;background:var(--green-bg);color:var(--green-ink);display:flex;align-items:center;justify-content:center;font-weight:700">₸</div>
-          <div class="who"><b>${money(x.p.amount)}</b><span>${x.p.method==='karta'?(x.p.card||'Karta'):methodLabel(x.p.method)} · ${x.p.time}</span></div>
+          <div class="who"><b>${money(x.remain)}</b><span>${x.p.method==='karta'?(x.p.card||'Karta'):methodLabel(x.p.method)} · ${x.p.time}${x.remain!==x.p.amount?` · qisman (to'landi ${money(x.p.amount)})`:''}</span></div>
           <div class="tm">${a.rSel==='pay:'+x.i?'✓ tanlandi':'Tanlash →'}</div></div>`).join('')
         + (totalRef>0?`<div class="mini-hint" style="padding:6px 12px;color:var(--txt-3)">Allaqachon qaytarilgan: ${money(totalRef)} · Qolgan qaytarish mumkin: <b>${money(refundable)}</b></div>`:'')
       : `<div class="mini-hint" style="padding:8px 12px">${totalPaid>0?`Hammasi qaytarilgan (${money(totalPaid)}) — boshqa qaytariladigan pul yo'q.`:"To'lov yo'q — qaytariladigan pul yo'q."}</div>`;
@@ -3821,7 +3840,7 @@ function drawActionModal(){
 
     // tanlangan element uchun MAX (qolgan) summa
     let maxAmt=0;
-    if((a.rSel||'').startsWith('pay:')) maxAmt=refundable;
+    if((a.rSel||'').startsWith('pay:')){ const it=pays.find(x=>'pay:'+x.i===a.rSel); maxAmt=it?it.remain:0; }
     else if(a.rSel==='stay') maxAmt=stayRemain;
     else if((a.rSel||'').startsWith('chg:')){ const it=items.find(x=>'chg:'+x.i===a.rSel); maxAmt=it?it.remain:0; }
     const isPay = (a.rSel||'').startsWith('pay:');
@@ -4010,15 +4029,16 @@ async function commitAction(){
     if(!amt||amt<=0){ toast('Summani kiriting.',false); return; }
 
     if(a.rSel.startsWith('pay:')){
-      /* 1) PUL QAYTARISH — kassadan chiqadi (qolgan qaytarish mumkin bo'lган summадан oshmasin) */
-      const totalRef=(s.payments||[]).filter(p=>p.type==='ref').reduce((x,p)=>x+p.amount,0);
-      const totalPaid=(s.payments||[]).filter(p=>p.type==='pay').reduce((x,p)=>x+p.amount,0);
-      const refundable=Math.max(0,totalPaid-totalRef);
-      if(refundable<=0){ toast('Qaytariladigan pul qolmagan — hammasi allaqachon qaytarilgan.',false); return; }
-      if(amt>refundable){ toast(`Ko'pi bilan ${money(refundable)} qaytarish mumkin (qolgan summa).`,false); return; }
-      const p=(s.payments||[]).filter(x=>x.type==='pay')[0]||{method:'naxt'};
-      s.payments.push({amount:amt,method:a.method||p.method,card:(a.method||p.method)==='karta'?(a.card||p.card||''):'',type:'ref',time:stamp,ts:new Date(base),by:role==='admin'?'Admin':'Menejer'});
-      logAction(s,'refund',`PUL QAYTARILDI (kassadan): ${money(amt)} · ${(a.method||p.method)==='karta'?(a.card||p.card||'Karta'):methodLabel(a.method||p.method)}`,amt,a.reason);
+      /* 1) PUL QAYTARISH — kassadan chiqadi. Tanlangan TO'LOVNING qoldig'idan oshmasin (usul to'g'ri yozilsin) */
+      const idx=+a.rSel.split(':')[1];
+      const selP=(s.payments||[])[idx]||{method:'naxt'};
+      const rp=refundablePays(s).find(x=>x.i===idx);
+      const payRemain=rp?rp.remain:0;
+      if(payRemain<=0){ toast('Bu to\'lov allaqachon to\'liq qaytarilgan.',false); return; }
+      if(amt>payRemain){ toast(`Ko'pi bilan ${money(payRemain)} qaytarish mumkin (shu to'lovdan qolgan).`,false); return; }
+      const meth=a.method||selP.method, crd=(a.card||selP.card||'');
+      s.payments.push({amount:amt,method:meth,card:meth==='karta'?crd:'',type:'ref',time:stamp,ts:new Date(base),by:role==='admin'?'Admin':'Menejer'});
+      logAction(s,'refund',`PUL QAYTARILDI (kassadan): ${money(amt)} · ${meth==='karta'?(crd||'Karta'):methodLabel(meth)}`,amt,a.reason);
       toast('Pul qaytarildi — kassadan chiqdi. Nazoratga yozildi ✓',true);
 
     } else if(a.rSel==='stay'){
