@@ -5412,13 +5412,18 @@ function renderTolov(){
   // karta turlari bo'yicha bo'lish (Humo, UzCard, Visa, Master...)
   const cardTypes={};
   inRange.filter(p=>p.type==='pay'&&p.method==='karta').forEach(p=>{ const c=p.card||'Karta'; cardTypes[c]=(cardTypes[c]||0)+p.amount; });
+  // 📲 Online to'lovlar (Payme/Click/Uzum) — har biri alohida ko'rinadi, sof tushumga kiradi
+  const ONLINE=['payme','click','uzum'];
+  const online=inRange.filter(p=>p.type==='pay'&&ONLINE.includes(p.method)).reduce((a,p)=>a+p.amount,0);
+  const onlineTypes={};
+  inRange.filter(p=>p.type==='pay'&&ONLINE.includes(p.method)).forEach(p=>{ const c=methodLabel(p.method); onlineTypes[c]=(onlineTypes[c]||0)+p.amount; });
   const refunds=inRange.filter(p=>p.type==='ref').reduce((a,p)=>a+p.amount,0);
-  const net=cash+card-refunds;
+  const net=cash+card+online-refunds;
   const debtStays=stays.filter(s=>balance(s)>0&&s.status!=='out'&&s.status!=='canceled');
   const debt=debtStays.reduce((a,s)=>a+balance(s),0);
 
   const shown=inRange.slice().reverse().filter(p=> payFilter==='all' || (payFilter==='naxt'&&p.method==='naxt'&&p.type==='pay')
-    || (payFilter==='karta'&&p.method==='karta'&&p.type==='pay') || (payFilter==='ref'&&p.type==='ref'));
+    || (payFilter==='karta'&&p.method==='karta'&&p.type==='pay') || (payFilter==='online'&&['payme','click','uzum'].includes(p.method)&&p.type==='pay') || (payFilter==='ref'&&p.type==='ref'));
   const shownSum=shown.reduce((a,p)=>a+(p.type==='ref'?-p.amount:p.amount),0);
 
   const rows=shown.map(p=>`<tr onclick="openFolio('${p.sid}')" style="cursor:pointer">
@@ -5456,14 +5461,16 @@ function renderTolov(){
     <div class="stat accent a-green"><div class="ico i-green">₸</div><div class="l">${t('naxtkassa')}</div><div class="v money-v">${somNum(cash)}<small> so'm</small></div></div>
     <div class="stat accent a-blue"><div class="ico i-blue">💳</div><div class="l">${t('kartajami')}</div><div class="v money-v">${somNum(card)}<small> so'm</small></div>
       <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px">${Object.keys(cardTypes).length?Object.entries(cardTypes).map(([c,v])=>`<span class="chip card" style="font-size:11px">${c}: ${somNum(v)}</span>`).join(''):`<span style="color:var(--txt-3);font-size:11px">${t('kartayoq')}</span>`}</div></div>
+    <div class="stat accent a-violet"><div class="ico i-violet">📲</div><div class="l">Online (Payme/Click/Uzum)</div><div class="v money-v">${somNum(online)}<small> so'm</small></div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px">${Object.keys(onlineTypes).length?Object.entries(onlineTypes).map(([c,v])=>`<span class="chip card" style="font-size:11px">${c}: ${somNum(v)}</span>`).join(''):`<span style="color:var(--txt-3);font-size:11px">Online to'lov yo'q</span>`}</div></div>
     <div class="stat accent a-red"><div class="ico i-red">↩</div><div class="l">${t('vozvratlar')}</div><div class="v money-v" style="color:var(--red-ink)">${somNum(refunds)}<small> so'm</small></div></div>
-    <div class="stat accent a-violet"><div class="ico i-violet">Σ</div><div class="l">${t('softushum')}</div><div class="v money-v">${somNum(net)}<small> so'm</small></div><div class="d">${t('naxtkarta')}</div></div>
+    <div class="stat accent a-violet"><div class="ico i-violet">Σ</div><div class="l">${t('softushum')}</div><div class="v money-v">${somNum(net)}<small> so'm</small></div><div class="d">naqd + karta + online − vozvrat</div></div>
     <div class="stat accent a-amber"><div class="ico i-amber">⚠</div><div class="l">${t('umumiyqarz')}</div><div class="v money-v" style="color:var(--red-ink)">${somNum(debt)}<small> so'm</small></div><div class="d down">${debtStays.length} ${t('tamehmon')}</div></div>
   </div>
 
   <div class="panel"><div class="panel-h"><h3>Pul harakatlari — ${payPeriod.from} — ${payPeriod.to}</h3><span class="spacer"></span>
     <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px;margin-right:8px" onclick="printPage('Kassa hisoboti')">🖨 ${P('Chop etish')}</button>
-    <div class="seg">${tab('all','Hammasi')}${tab('naxt','Naxt')}${tab('karta','Karta')}${tab('ref','Vozvrat')}</div></div>
+    <div class="seg">${tab('all','Hammasi')}${tab('naxt','Naxt')}${tab('karta','Karta')}${tab('online','Online')}${tab('ref','Vozvrat')}</div></div>
     <table class="data"><thead><tr><th>${P("Vaqt")}</th><th>${P("Xona")}</th><th>${P("Mehmon")}</th><th>${P("Turi")}</th><th>${P("Usul")}</th><th>${P("Kim")}</th><th style="text-align:right">${P("Summa")}</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr style="background:var(--panel-2)"><td colspan="6" style="text-align:right;font-weight:700;padding:12px 20px">ИТОГО (belgilangan davr):</td>
@@ -6011,12 +6018,12 @@ async function sendAuditToTelegram(dayStr){
 
     // ── kun raqamlari ──
     const dayMs=new Date(+dayY.split('-')[0],+dayY.split('-')[1]-1,+dayY.split('-')[2]).getTime();
-    let naqd=0, karta=0, vozvrat=0;
+    let naqd=0, karta=0, online=0, vozvrat=0;
     stays.forEach(s=>(s.payments||[]).forEach(p=>{
       if(!p.ts || ymd(new Date(p.ts))!==dayY) return;
       const a=+p.amount||0;
       if(p.type==='ref'||p.type==='refund'){ vozvrat+=a; return; }
-      if(p.method==='naxt') naqd+=a; else if(p.method==='karta') karta+=a; else naqd+=a;
+      if(p.method==='naxt') naqd+=a; else if(p.method==='karta') karta+=a; else online+=a;
     }));
     const kelgan=stays.filter(s=>stripTime(s.inDate).getTime()===dayMs).length;
     const ketgan=stays.filter(s=>s.status==='out'&&stripTime(s.checkoutDate||s.outDate).getTime()===dayMs).length;
@@ -6054,9 +6061,9 @@ async function sendAuditToTelegram(dayStr){
 
 💰 KUN YAKUNI
 💵 Naqd: ${money(naqd)}
-💳 Karta: ${money(karta)}${vozvrat?`\n↩️ Vozvrat: −${money(vozvrat)}`:''}
+💳 Karta: ${money(karta)}${online?`\n📲 Online: ${money(online)}`:''}${vozvrat?`\n↩️ Vozvrat: −${money(vozvrat)}`:''}
 ━━━━━━━━━━
-📊 Jami: ${money(naqd+karta-vozvrat)}
+📊 Jami: ${money(naqd+karta+online-vozvrat)}
 
 🛏 Band xonalar: ${band}/${rooms.length}
 ➡️ Kelgan: ${kelgan} · ⬅️ Ketgan: ${ketgan}
@@ -6072,8 +6079,8 @@ async function sendAuditToTelegram(dayStr){
       ['Yopilgan kun',dayStr],['Yangi kun',fmt(base)],['Kim yopdi',kim],['Soat',soat],
       [],
       ['Ko\'rsatkich','Qiymat'],
-      ['Naqd (so\'m)',naqd],['Karta (so\'m)',karta],['Vozvrat (so\'m)',vozvrat],
-      ['JAMI (so\'m)',naqd+karta-vozvrat],
+      ['Naqd (so\'m)',naqd],['Karta (so\'m)',karta],['Online (so\'m)',online],['Vozvrat (so\'m)',vozvrat],
+      ['JAMI (so\'m)',naqd+karta+online-vozvrat],
       ['Band xonalar',band+' / '+rooms.length],['Kelgan',kelgan],['Ketgan',ketgan],
       ['Qarzdorlik (so\'m)',qarz],
     ]);
@@ -6130,7 +6137,7 @@ function renderKunlik(){
   /* --- TUSHUM (usullar bo'yicha) --- */
   const rows=[];
   stays.forEach(s=>(s.payments||[]).forEach(pm=>{ if(sameDay(pm.ts)) rows.push({s,pm}); }));
-  const M=[['naxt','Naqd'],['karta','Karta'],['payme','Payme'],['click','Click'],['bank','Bank o\'tkazma']];
+  const M=[['naxt','Naqd'],['karta','Karta'],['payme','Payme'],['click','Click'],['uzum','Uzum']];
   const sums={}; let jamiIn=0, jamiRef=0;
   rows.forEach(({pm})=>{
     const k=pm.method||'naxt';
